@@ -139,11 +139,11 @@ Parameters:
     Default: "Optimization-Data-Multi-Account-Role"
   Schedule:
     Type: String
-    Description: EventBridge schedule to trigger data collection for Trusted Advisor, Compute Optimizer, Organizations Data, Rightsizing, RDS Utilization, Inventory Collector, Transit Gateway, Backup, and ECS Chargeback modules (see docs for tailoring the schedule for each module).
+    Description: EventBridge schedule to trigger data collection for Trusted Advisor, Compute Optimizer, Organizations Data, Rightsizing, RDS Utilization, Inventory Collector, Transit Gateway, Backup, and ECS Chargeback modules (see docs for tailoring the schedule for each module). Recommended value: rate(14 days). Plase limit frequency to daily at most to avoid additional cost. 
     Default: "rate(14 days)"
   ScheduleFrequent:
     Type: String
-    Description: EventBridge schedule to trigger data collection for Cost Anomalies, Budgets, Support Cases and Health Events modules (see docs for tailoring the schedule for each module).
+    Description: EventBridge schedule to trigger data collection for Cost Anomalies, Budgets, Support Cases and Health Events modules (see docs for tailoring the schedule for each module). Recommended value: rate(1 day). Plase limit frequency to daily at most to avoid additional cost.
     Default: "rate(1 day)"
   RegionsInScope:
     Type: String
