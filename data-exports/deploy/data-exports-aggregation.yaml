@@ -863,7 +863,7 @@ Resources:
                       except:
                           pass # Do not block deletion
                   else:
-                      res = client.update_export(Name=old_export_name, Export=export)
+                      res = client.update_export(ExportArn=event['OldResourceProperties']['Export']['ExportArn'], Export=export)
                       print('updated:', json.dumps(res))
               elif event['RequestType'] == 'Delete':
                   try:
