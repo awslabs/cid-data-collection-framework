@@ -864,8 +864,8 @@ Resources:
                       try:
                           res = client.delete_export(ExportArn=old_export_arn)
                           print('deleted:', json.dumps(res))
-                      except:
-                          pass # Do not block deletion
+                      except Exception as exc:
+                          print('Exception on deletion:', str(exc))
                   elif export['DataQuery'] != old_export['DataQuery']: # Data export do not support update of queries
                       print(export['DataQuery'], '!=', old_export['DataQuery'])
                       res = client.delete_export(ExportArn=old_export_arn)
@@ -876,12 +876,15 @@ Resources:
                       res = client.update_export(ExportArn=old_export_arn, Export=export)
                       print('updated:', json.dumps(res))
               elif event['RequestType'] == 'Delete':
+                  export_name = export['Name']
                   try:
-                      old_export_arn = list(client.get_paginator('list_exports').paginate().search(f"Exports[? ExportName=='{old_export_name}']"))[0]['ExportArn']
-                      res = client.delete_export(ExportArn=old_export_arn)
+                      export_arn = list(client.get_paginator('list_exports').paginate().search(f"Exports[? ExportName=='{export_name}']"))[0]['ExportArn']
+                      res = client.delete_export(ExportArn=export_arn)
                       print('deleted:', json.dumps(res))
+                  except client.exceptions.ResourceNotFoundException:
+                      print('Not Found. Nothing to delete')
                   except:
-                      pass # Do not block deletion
+                      print('Exception on deletion:', str(exc))
               else:
                   raise Exception("Unknown operation: " + event['RequestType'])
 
