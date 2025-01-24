@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: AWS Billing Data Export Aggregation v0.1.6
+Description: AWS Billing Data Export Aggregation v0.1.7
 Metadata:
 
   AWS::CloudFormation::Interface:
@@ -1512,10 +1512,12 @@ Resources:
 
 Outputs:
   AggregateBucketName:
+    Condition: IsDestinationAccount
     Description: Bucket with aggregate Data Exports
     Value: !Sub ${ResourcePrefix}-${DestinationAccountId}-data-exports
     Export: { Name: 'cid-DataExports-Bucket'}
   Database:
+    Condition: DeployAnyTable
     Description: Database for Data Exports
     Value:  !Join [ '_', !Split [ '-', !Sub '${ResourcePrefix}_data_export' ] ] # replace '-' to '_'
     Export: { Name: 'cid-DataExports-Database'}
