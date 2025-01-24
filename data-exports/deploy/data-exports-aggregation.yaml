@@ -25,6 +25,7 @@ Metadata:
           - EnableSCAD
           - RolePath
           - TimeGranularity
+          - SecondaryDestinationBucket
 
     ParameterLabels:
       ManageCOH:
@@ -43,6 +44,8 @@ Metadata:
         default: "Enable Split Cost Allocation Data (SCAD) in CUR 2.0"
       TimeGranularity:
         default: "CUR 2.0 Granularity. Do not change."
+      SecondaryDestinationBucket:
+        default: "Secondary Destination Bucket Name. Keep it Empty."
 
 
 Parameters:
@@ -102,10 +105,15 @@ Parameters:
     Description: Changing of this parameter will require redeployment of this Stack, purging of data in Destination and then additional Backfill request. HOURLY is a recommended option unless your AWS invoice is more then $50M (in this case contact your TAM when installing).
     Default: "HOURLY"
     AllowedValues: ["HOURLY", "DAILY", "MONTHLY"]
+  SecondaryDestinationBucket:
+    Type: String
+    Description: A Bucket name for supplementary Replication. If not empty, the export data will be copied to this bucket in addition to Destination Account.
+    Default: ''
 
 Conditions:
   EmptySourceAccountIds: !Equals [ !Ref SourceAccountIds, '']
   IsDestinationAccount: !Equals [!Ref DestinationAccountId, !Ref 'AWS::AccountId']
+  NonEmptySecondaryDestinationBucket: !Not [ !Equals [ !Ref SecondaryDestinationBucket, ''] ]
   IsSourceAccount:
     # it is Source account if it is not a destination or if it is a destination and it is listed in Source Accounts (as the list one).
     # Unfortunately, there no 'Fn::Contains' in Conditions, so we need to request user setting Dest account as the first.
@@ -321,6 +329,33 @@ Resources:
             Id: ReplicateCOHData
             Prefix: !Sub "coh/${AWS::AccountId}/${ResourcePrefix}-coh/data/" # Hardcoded export name
             Status: Enabled
+          - Fn::If:
+            - NonEmptySecondaryDestinationBucket
+            - Destination:
+                Bucket: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
+                StorageClass: STANDARD
+              Id: ReplicateCUR2Data
+              Prefix: !Sub "cur2/${AWS::AccountId}/${ResourcePrefix}-cur2/data/"  # Hardcoded export name
+              Status: Enabled
+            - !Ref 'AWS::NoValue'
+          - Fn::If:
+            - NonEmptySecondaryDestinationBucket
+            - Destination:
+                Bucket: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
+                StorageClass: STANDARD
+              Id: ReplicateFOCUSData
+              Prefix: !Sub "focus/${AWS::AccountId}/${ResourcePrefix}-focus/data/" # Hardcoded export name
+              Status: Enabled
+            - !Ref 'AWS::NoValue'
+          - Fn::If:
+            - NonEmptySecondaryDestinationBucket
+            - Destination:
+                Bucket: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
+                StorageClass: STANDARD
+              Id: ReplicateCOHData
+              Prefix: !Sub "coh/${AWS::AccountId}/${ResourcePrefix}-coh/data/" # Hardcoded export name
+              Status: Enabled
+            - !Ref 'AWS::NoValue'
       LifecycleConfiguration:
         Rules:
           - Id: Object&Version Expiration
@@ -399,7 +434,7 @@ Resources:
             Action:
               - "sts:AssumeRole"
       Policies:
-        - PolicyName: ReplicationPolicy
+        - PolicyName: ReplicationPolicyForDestinationAccount
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -420,6 +455,30 @@ Resources:
                   - s3:ReplicateDelete
                   - s3:ReplicateTags
                 Resource: !Sub "arn:${AWS::Partition}:s3:::${ResourcePrefix}-${DestinationAccountId}-data-exports/*/${AWS::AccountId}/*"
+        - Fn::If:
+          - NonEmptySecondaryDestinationBucket
+          - PolicyName: ReplicationPolicyForSecondaryBucket
+            PolicyDocument:
+              Version: 2012-10-17
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - s3:GetReplicationConfiguration
+                    - s3:ListBucket
+                  Resource: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
+                - Effect: Allow
+                  Action:
+                    - s3:GetObjectVersionForReplication
+                    - s3:GetObjectVersionAcl
+                    - s3:GetObjectVersionTagging
+                  Resource: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}/*"
+                - Effect: Allow
+                  Action:
+                    - s3:ReplicateObject
+                    - s3:ReplicateDelete
+                    - s3:ReplicateTags
+                  Resource: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}/*/${AWS::AccountId}/*"
+          - !Ref 'AWS::NoValue'
 
   # CUR2
 
