@@ -107,7 +107,7 @@ Parameters:
     AllowedValues: ["HOURLY", "DAILY", "MONTHLY"]
   SecondaryDestinationBucket:
     Type: String
-    Description: A Bucket name for supplementary Replication. If not empty, the export data will be copied to this bucket in addition to Destination Account.
+    Description: Leave Empty. A Bucket name for optional supplementary data replication. If not empty, the export data will be replicated to this bucket in addition to the default replication destination. Keep it empty if unsure.
     Default: ''
 
 Conditions:
