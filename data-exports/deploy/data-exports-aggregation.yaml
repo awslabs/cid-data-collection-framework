@@ -125,6 +125,10 @@ Conditions:
       - !Condition ManageCUR2
       - !Condition ManageFOCUS
       - !Condition ManageCOH
+  DeploySourceS3:
+    Fn::And:
+      - !Condition IsSourceAccount
+      - !Condition DeployDataExport
   DeployCOHServiceRole:  !And [!Condition IsSourceAccount, !Condition ManageCOH]
   DeployCUR2ViaCFN:      !And [!Condition IsSourceAccount, !Condition ManageCUR2,        !Condition RegionSupportsDataExportsViaCFN]
   DeployFOCUSViaCFN:     !And [!Condition IsSourceAccount, !Condition ManageFOCUS,       !Condition RegionSupportsDataExportsViaCFN]
@@ -271,7 +275,7 @@ Resources:
 
   SourceS3:
     Type: AWS::S3::Bucket
-    Condition: DeployDataExport
+    Condition: DeploySourceS3
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
@@ -339,7 +343,7 @@ Resources:
 
   SourceS3BucketPolicy:
     Type: 'AWS::S3::BucketPolicy'
-    Condition: DeployDataExport
+    Condition: DeploySourceS3
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
@@ -384,7 +388,7 @@ Resources:
                 aws:SourceAccount: !Ref AWS::AccountId
 
   ReplicationRole:
-    Condition: DeployDataExport
+    Condition: DeploySourceS3
     Type: AWS::IAM::Role
     Properties:
       Path: !Sub /${ResourcePrefix}/
@@ -1522,7 +1526,7 @@ Outputs:
     Value:  !Join [ '_', !Split [ '-', !Sub '${ResourcePrefix}_data_export' ] ] # replace '-' to '_'
     Export: { Name: 'cid-DataExports-Database'}
   LocalAccountBucket:
-    Condition: DeployDataExport
+    Condition: DeploySourceS3
     Description: Local Bucket Name which replicate objects to centralized bucket
     Value: !Sub ${ResourcePrefix}-${AWS::AccountId}-data-local
   ReadAccessPolicyARN:
