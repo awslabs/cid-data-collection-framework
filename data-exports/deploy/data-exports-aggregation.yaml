@@ -43,7 +43,8 @@ Metadata:
         default: "Enable Split Cost Allocation Data (SCAD) in CUR 2.0"
       TimeGranularity:
         default: "CUR 2.0 Granularity. Do not change."
-
+      LakeFormationEnabled:
+        default: "I have LakeFormation permission model in place for this account & my CFN deployment credentials have administrative rights on LakeFormation"
 
 Parameters:
 
@@ -102,6 +103,11 @@ Parameters:
     Description: Changing of this parameter will require redeployment of this Stack, purging of data in Destination and then additional Backfill request. HOURLY is a recommended option unless your AWS invoice is more then $50M (in this case contact your TAM when installing).
     Default: "HOURLY"
     AllowedValues: ["HOURLY", "DAILY", "MONTHLY"]
+  LakeFormationEnabled:
+    Type: String
+    Description: Choose 'yes' if Lake Formation permission model is in place for the account. If you are not sure, leave it as 'no'. You need to install cid-lakeformation-prerequisite.yaml first.
+    Default: "no"
+    AllowedValues: ["yes", "no"]
 
 Conditions:
   EmptySourceAccountIds: !Equals [ !Ref SourceAccountIds, '']
@@ -141,6 +147,11 @@ Conditions:
   DeployCOHTable:        !And [!Condition IsDestinationAccount, !Condition ManageCOH]
   DeployAnyExportViaLambda: !Or [!Condition DeployCUR2ViaLambda, !Condition DeployFOCUSViaLambda, !Condition DeployCOHViaLambda]
   DeployAnyTable: !Or [!Condition DeployFOCUSTable, !Condition DeployCUR2Table, !Condition DeployCOHTable]
+
+  NeedLakeFormationEnabledDB: !And [ !Equals [ !Ref LakeFormationEnabled, "yes"], !Condition DeployAnyTable]
+  NeedLakeFormationEnabledCOH:    !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageCOH]
+  NeedLakeFormationEnabledCUR2:   !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageCUR2]
+  NeedLakeFormationEnabledFOCUS:  !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageFOCUS]
 
 Mappings:
   DataExports:
@@ -1292,6 +1303,66 @@ Resources:
             }
           }
         }
+
+
+  LakeFormationTagsForDatabase:
+    Type: AWS::LakeFormation::TagAssociation
+    Condition: NeedLakeFormationEnabledDB
+    Properties:
+      Resource:
+        Database:
+          CatalogId: !Ref "AWS::AccountId"
+          Name: !Ref CIDDatabase
+      LFTags:
+        - TagKey: !ImportValue cid-LakeFormation-TagKey # you need to install cid-lakeformation-prerequisite.yaml
+          TagValues:
+            - !ImportValue cid-LakeFormation-TagValue
+          CatalogId: !Ref "AWS::AccountId"
+
+  LakeFormationTagsForCUR2:
+    Type: AWS::LakeFormation::TagAssociation
+    Condition: NeedLakeFormationEnabledCUR2
+    Properties:
+      Resource:
+        Table:
+          CatalogId: !Ref "AWS::AccountId"
+          DatabaseName: !Ref CIDDatabase
+          Name: !Ref CURTable
+      LFTags:
+        - TagKey: !ImportValue cid-LakeFormation-TagKey  # you need to install cid-lakeformation-prerequisite.yaml
+          TagValues:
+            - !ImportValue cid-LakeFormation-TagValue
+          CatalogId: !Ref "AWS::AccountId"
+
+  LakeFormationTagsForCOH:
+    Type: AWS::LakeFormation::TagAssociation
+    Condition: NeedLakeFormationEnabledCOH
+    Properties:
+      Resource:
+        Table:
+          CatalogId: !Ref "AWS::AccountId"
+          DatabaseName: !Ref CIDDatabase
+          Name: !Ref COHTable
+      LFTags:
+        - TagKey: !ImportValue cid-LakeFormation-TagKey  # you need to install cid-lakeformation-prerequisite.yaml
+          TagValues:
+            - !ImportValue cid-LakeFormation-TagValue
+          CatalogId: !Ref "AWS::AccountId"
+
+  LakeFormationTagsForFOCUS:
+    Type: AWS::LakeFormation::TagAssociation
+    Condition: NeedLakeFormationEnabledFOCUS
+    Properties:
+      Resource:
+        Table:
+          CatalogId: !Ref "AWS::AccountId"
+          DatabaseName: !Ref CIDDatabase
+          Name: !Ref FOCUSTable
+      LFTags:
+        - TagKey: !ImportValue cid-LakeFormation-TagKey  # you need to install cid-lakeformation-prerequisite.yaml
+          TagValues:
+            - !ImportValue cid-LakeFormation-TagValue
+          CatalogId: !Ref "AWS::AccountId"
 
 
 ###########################################################################
