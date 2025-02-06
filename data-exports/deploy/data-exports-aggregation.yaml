@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: AWS Billing Data Export Aggregation v0.1.7
+Description: AWS Billing Data Export Aggregation v0.2.0
 Metadata:
 
   AWS::CloudFormation::Interface:
