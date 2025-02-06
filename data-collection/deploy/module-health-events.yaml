@@ -143,6 +143,7 @@ Resources:
           from datetime import date, datetime, timedelta, timezone
 
           import boto3
+          from botocore.config import Config
 
           logger = logging.getLogger()
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -156,6 +157,9 @@ Resources:
           LOOKBACK = int(os.environ['LOOKBACK'])
           DETAIL_SM_ARN = os.environ['DETAIL_SM_ARN']
           TMP_FILE = "/tmp/data.json"
+          MAX_RETRIES = int(os.environ.get('MAX_RETRIES', "10"))
+
+          config = Config(retries={"max_attempts": MAX_RETRIES, "mode": "adaptive"})
 
           mapping = {
               'payer_account_id': 'payer_account_id',
@@ -341,6 +345,7 @@ Resources:
               )['Credentials']
               health_client = boto3.client(
                   'health',
+                  config=config,
                   region_name=region,
                   aws_access_key_id=creds['AccessKeyId'],
                   aws_secret_access_key=creds['SecretAccessKey'],
@@ -415,7 +420,7 @@ Resources:
                   if count > 0:
                       rand = uuid.uuid4()
                       key = ingestion_time.strftime(f"{PREFIX}/{PREFIX}-detail-data/payer_id={account_id}/year=%Y/month=%m/day=%d/%Y-%m-%d-%H-%M-%S-{rand}.json")
-                      boto3.client('s3').upload_file(TMP_FILE, BUCKET_NAME, key)
+                      boto3.client('s3', config=config).upload_file(TMP_FILE, BUCKET_NAME, key)
                       logger.info(f'Uploaded {count} summary records to s3://{BUCKET_NAME}/{key}')
               return {"status":"200","Recorded":f'"{count}"'}
       Handler: "index.lambda_handler"
