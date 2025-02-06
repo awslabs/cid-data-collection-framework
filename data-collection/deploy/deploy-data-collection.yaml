@@ -955,6 +955,7 @@ Resources:
           - { Name: datalocation,                Type: string }
           - { Name: runuuid,                     Type: string }
           - { Name: subuuid,                     Type: array<string> }
+          - { Name: service,                     Type: string }
           InputFormat: org.apache.hadoop.mapred.TextInputFormat
           OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
           Location: !Sub "s3://${DestinationBucket}${AWS::AccountId}/logs/"
