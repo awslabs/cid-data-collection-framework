@@ -29,6 +29,15 @@ This module deploys the necessary IAM roles to each linked account for monitorin
 
 This module orchestrates the data collection process and deploys CloudFormation template for data collection as a wrapper
 
+## Version Locking
+
+For production deployments, you should lock module versions to a release tag to better control when and what updates are made.
+Use "*tag_version*" variable to select a release tag.
+```bash
+tag_version = "3.6.2"
+```
+
+For a complete list of release tags, visit [https://github.com/awslabs/cid-data-collection-framework/tags]https://github.com/awslabs/cid-data-collection-framework/tags.
 
 ## Deployment Process
 
