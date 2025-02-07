@@ -3,7 +3,7 @@ data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
 
 locals {
-  template_url = "https://aws-managed-cost-intelligence-dashboards-${data.aws_region.current.name}.s3.amazonaws.com/cfn/data-collection/deploy-data-collection.yaml"
+  template_url = "https://aws-managed-cost-intelligence-dashboards-${data.aws_region.current.name}.s3.amazonaws.com/cfn/${var.tag_version}/data-collection/deploy-data-collection.yaml"
 }
 
 resource "aws_cloudformation_stack" "data_collection" {

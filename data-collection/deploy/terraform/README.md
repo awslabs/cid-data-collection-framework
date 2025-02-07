@@ -24,21 +24,20 @@ This module deploys the necessary IAM roles to each linked account for monitorin
 
 - Creates standardized IAM roles across member accounts
 - Configures granular permissions for various data collection features
-- Supports multiple optional monitoring components:
-  - Trusted Advisor
-  - Support Cases
-  - AWS Budgets
-  - Inventory Collection
-  - ECS Chargeback
-  - RDS Utilization
-  - Transit Gateway
-  - Service Quotas
-
 
 ### 3. Data Collection Module
 
 This module orchestrates the data collection process and deploys CloudFormation template for data collection as a wrapper
 
+## Version Locking
+
+For production deployments, you should lock module versions to a release tag to better control when and what updates are made.
+Use "*tag_version*" variable to select a release tag.
+```bash
+tag_version = "3.6.2"
+```
+
+For a complete list of release tags, visit [https://github.com/awslabs/cid-data-collection-framework/tags]https://github.com/awslabs/cid-data-collection-framework/tags.
 
 ## Deployment Process
 
@@ -103,3 +102,13 @@ Common issues and solutions:
    - Verify S3 bucket permissions
    - Check CloudWatch Logs for execution errors
    - Ensure correct role ARNs are being used
+
+## Contributing
+
+Contributions to improve the solution are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Submit a pull request with detailed description of changes
+4. Ensure all existing tests pass
+5. Add new tests as needed

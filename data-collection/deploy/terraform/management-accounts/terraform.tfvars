@@ -1,6 +1,7 @@
 resource_prefix = "CID-DC-"
 management_account_role = "Lambda-Assume-Role-Management-Account"
 data_collection_account_id = "123456789123"
+tag_version = "3.6.2"
 
 # Module flags
 backup_module = "yes"

@@ -174,3 +174,14 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "tag_version" {
+  description = "GitHub tag version using for the deployment (e.g. 4.0.7)"
+  type        = string
+  default     = ""
+}
+
+validation {
+  condition     = var.tag_version == "" || can(regex("^\\d+\\.\\d+\\.\\d+$", var.tag_version))
+  error_message = "The tag_version must be in the format X.Y.Z where X, Y, and Z are digits (e.g., 4.0.7)"
+}

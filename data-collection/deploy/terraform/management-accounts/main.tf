@@ -2,7 +2,7 @@ data "aws_region" "current" {}
 data "aws_partition" "current" {}
 
 locals {
-  template_url = "https://aws-managed-cost-intelligence-dashboards-${data.aws_region.current.name}.s3.amazonaws.com/cfn/data-collection/deploy-in-management-account.yaml"
+  template_url = "https://aws-managed-cost-intelligence-dashboards-${data.aws_region.current.name}.s3.amazonaws.com/cfn/${var.tag_version}/data-collection/deploy-in-management-account.yaml"
 }
 
 # Management account IAM role deployment

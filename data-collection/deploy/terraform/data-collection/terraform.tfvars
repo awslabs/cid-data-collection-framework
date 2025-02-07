@@ -1,5 +1,6 @@
 # Default values for variables
 resource_prefix = "CID-DC-"
+tag_version = "3.6.2"
 
 destination_bucket = "cid-data-"
 management_account_id = "987654321987"  # Required: Add your management account IDs as a comma separated list
