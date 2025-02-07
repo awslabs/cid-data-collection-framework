@@ -241,6 +241,9 @@ Resources:
               - "eks:ListNodegroups"
               - "eks:DescribeNodegroup"
               - "lambda:ListFunctions"
+              - "workspaces:DescribeWorkspaces"
+              - "workspaces:DescribeWorkspaceDirectories"
+              - "workspaces:DescribeWorkspacesConnectionStatus"            
             Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
         - Ref: LambdaRole
