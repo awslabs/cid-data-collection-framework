@@ -24,16 +24,6 @@ This module deploys the necessary IAM roles to each linked account for monitorin
 
 - Creates standardized IAM roles across member accounts
 - Configures granular permissions for various data collection features
-- Supports multiple optional monitoring components:
-  - Trusted Advisor
-  - Support Cases
-  - AWS Budgets
-  - Inventory Collection
-  - ECS Chargeback
-  - RDS Utilization
-  - Transit Gateway
-  - Service Quotas
-
 
 ### 3. Data Collection Module
 
