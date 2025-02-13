@@ -279,17 +279,17 @@ Resources:
                     - s3:GetObjectVersionTagging
                     Effect: 'Allow'
                     Resource: !Sub arn:${AWS::Partition}:s3:::${DestinationBucket}/*
-                  - !If
-                    - NeedDataBucketsKms
-                    - PolicyName: "KMS"
-                      PolicyDocument:
-                        Version: "2012-10-17"
-                        Statement:
-                          - Effect: "Allow"
-                            Action:
-                              - "kms:GenerateDataKey"
-                            Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
-                    - !Ref AWS::NoValue
+              - !If
+                - NeedDataBucketsKms
+                - PolicyName: "KMS"
+                  PolicyDocument:
+                    Version: "2012-10-17"
+                    Statement:
+                      - Effect: "Allow"
+                        Action:
+                          - "kms:GenerateDataKey"
+                        Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+                - !Ref AWS::NoValue
           S3Bucket:
             Type: AWS::S3::Bucket
             DeletionPolicy: Delete
