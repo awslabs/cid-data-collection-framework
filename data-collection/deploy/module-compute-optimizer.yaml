@@ -386,7 +386,6 @@ Resources:
           import logging
           from datetime import date
           from functools import partial
-          import boto3
 
           BUCKET_PREFIX = os.environ["BUCKET_PREFIX"]
           INCLUDE_MEMBER_ACCOUNTS = os.environ.get("INCLUDE_MEMBER_ACCOUNTS", 'yes').lower() == 'yes'
@@ -396,6 +395,12 @@ Resources:
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+          #ensure we get latest boto3
+          from pip._internal.cli.main import main, sys
+          logging.getLogger('pip').setLevel(logging.ERROR) # Silence pip's logger
+          main(['install', '-I', 'boto3', '--target', '/tmp/', '--no-cache-dir', '--disable-pip-version-check'])
+          sys.path.insert(0,'/tmp/')
+          import boto3 #pylint: disable=wrong-import-position
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               logger.info(f"Event data {json.dumps(event)}")
@@ -430,6 +435,7 @@ Resources:
                           'ecs_service':  co.export_ecs_service_recommendations,
                           'license':      co.export_license_recommendations,
                           'rds_database': partial(co.export_rds_database_recommendations, recommendationPreferences={'cpuVendorArchitectures': ARCH}),
+                          'idle':         co.export_idle_recommendations,
                       }
                       bucket = BUCKET_PREFIX + '.' + region
                       logger.info(f"INFO: bucket={bucket}")
