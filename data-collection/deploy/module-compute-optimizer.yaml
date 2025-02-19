@@ -330,7 +330,6 @@ Resources:
                     Status: Enabled
                     NoncurrentVersionExpiration:
                       NoncurrentDays: 1
-                      NewerNoncurrentVersions: 1
       Tags: # Hacky way to manage dependencies
         - Key: IgnoreMeIamOnlyWorkaround
           Value: !GetAtt StackSetExecutionRole.Arn
