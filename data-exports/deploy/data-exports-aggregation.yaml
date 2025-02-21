@@ -350,7 +350,7 @@ Resources:
             - Destination:
                 Bucket: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
                 StorageClass: STANDARD
-              Id: ReplicateCUR2Data
+              Id: ReplicateCUR2DataToSecondaryBucket
               Prefix: !Sub "cur2/${AWS::AccountId}/${ResourcePrefix}-cur2/data/"  # Hardcoded export name
               Status: Enabled
             - !Ref 'AWS::NoValue'
@@ -359,7 +359,7 @@ Resources:
             - Destination:
                 Bucket: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
                 StorageClass: STANDARD
-              Id: ReplicateFOCUSData
+              Id: ReplicateFOCUSDataToSecondaryBucket
               Prefix: !Sub "focus/${AWS::AccountId}/${ResourcePrefix}-focus/data/" # Hardcoded export name
               Status: Enabled
             - !Ref 'AWS::NoValue'
@@ -368,7 +368,7 @@ Resources:
             - Destination:
                 Bucket: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
                 StorageClass: STANDARD
-              Id: ReplicateCOHData
+              Id: ReplicateCOHDataToSecondaryBucket
               Prefix: !Sub "coh/${AWS::AccountId}/${ResourcePrefix}-coh/data/" # Hardcoded export name
               Status: Enabled
             - !Ref 'AWS::NoValue'
@@ -453,7 +453,7 @@ Resources:
             Action:
               - "sts:AssumeRole"
       Policies:
-        - PolicyName: ReplicationPolicyForDestinationAccount
+        - PolicyName: ReplicationPolicy
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -473,31 +473,9 @@ Resources:
                   - s3:ReplicateObject
                   - s3:ReplicateDelete
                   - s3:ReplicateTags
-                Resource: !Sub "arn:${AWS::Partition}:s3:::${ResourcePrefix}-${DestinationAccountId}-data-exports/*/${AWS::AccountId}/*"
-        - Fn::If:
-          - NonEmptySecondaryDestinationBucket
-          - PolicyName: ReplicationPolicyForSecondaryBucket
-            PolicyDocument:
-              Version: 2012-10-17
-              Statement:
-                - Effect: Allow
-                  Action:
-                    - s3:GetReplicationConfiguration
-                    - s3:ListBucket
-                  Resource: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
-                - Effect: Allow
-                  Action:
-                    - s3:GetObjectVersionForReplication
-                    - s3:GetObjectVersionAcl
-                    - s3:GetObjectVersionTagging
-                  Resource: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}/*"
-                - Effect: Allow
-                  Action:
-                    - s3:ReplicateObject
-                    - s3:ReplicateDelete
-                    - s3:ReplicateTags
-                  Resource: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}/*/${AWS::AccountId}/*"
-          - !Ref 'AWS::NoValue'
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${ResourcePrefix}-${DestinationAccountId}-data-exports/*/${AWS::AccountId}/*"
+                  - !If [NonEmptySecondaryDestinationBucket, !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}/*/${AWS::AccountId}/*", !Ref 'AWS::NoValue']
 
   # CUR2
 
