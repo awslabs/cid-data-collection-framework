@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: AWS Billing Data Export Aggregation v0.2.0
+Description: AWS Billing Data Export Aggregation v0.3.0
 Metadata:
 
   AWS::CloudFormation::Interface:
@@ -25,6 +25,7 @@ Metadata:
           - EnableSCAD
           - RolePath
           - TimeGranularity
+          - SecondaryDestinationBucket
 
     ParameterLabels:
       ManageCOH:
@@ -45,6 +46,9 @@ Metadata:
         default: "CUR 2.0 Granularity. Do not change."
       LakeFormationEnabled:
         default: "I have LakeFormation permission model in place for this account & my CFN deployment credentials have administrative rights on LakeFormation"
+      SecondaryDestinationBucket:
+        default: "Secondary Destination Bucket Name. Keep it Empty."
+
 
 Parameters:
 
@@ -108,10 +112,15 @@ Parameters:
     Description: Choose 'yes' if Lake Formation permission model is in place for the account. If you are not sure, leave it as 'no'. You need to install cid-lakeformation-prerequisite.yaml first.
     Default: "no"
     AllowedValues: ["yes", "no"]
+  SecondaryDestinationBucket:
+    Type: String
+    Description: Leave Empty. A Bucket name for optional supplementary data replication. If not empty, the export data will be replicated to this bucket in addition to the default replication destination. Keep it empty if unsure.
+    Default: ''
 
 Conditions:
   EmptySourceAccountIds: !Equals [ !Ref SourceAccountIds, '']
   IsDestinationAccount: !Equals [!Ref DestinationAccountId, !Ref 'AWS::AccountId']
+  NonEmptySecondaryDestinationBucket: !Not [ !Equals [ !Ref SecondaryDestinationBucket, ''] ]
   IsSourceAccount:
     # it is Source account if it is not a destination or if it is a destination and it is listed in Source Accounts (as the list one).
     # Unfortunately, there no 'Fn::Contains' in Conditions, so we need to request user setting Dest account as the first.
@@ -336,6 +345,33 @@ Resources:
             Id: ReplicateCOHData
             Prefix: !Sub "coh/${AWS::AccountId}/${ResourcePrefix}-coh/data/" # Hardcoded export name
             Status: Enabled
+          - Fn::If:
+            - NonEmptySecondaryDestinationBucket
+            - Destination:
+                Bucket: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
+                StorageClass: STANDARD
+              Id: ReplicateCUR2DataToSecondaryBucket
+              Prefix: !Sub "cur2/${AWS::AccountId}/${ResourcePrefix}-cur2/data/"  # Hardcoded export name
+              Status: Enabled
+            - !Ref 'AWS::NoValue'
+          - Fn::If:
+            - NonEmptySecondaryDestinationBucket
+            - Destination:
+                Bucket: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
+                StorageClass: STANDARD
+              Id: ReplicateFOCUSDataToSecondaryBucket
+              Prefix: !Sub "focus/${AWS::AccountId}/${ResourcePrefix}-focus/data/" # Hardcoded export name
+              Status: Enabled
+            - !Ref 'AWS::NoValue'
+          - Fn::If:
+            - NonEmptySecondaryDestinationBucket
+            - Destination:
+                Bucket: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
+                StorageClass: STANDARD
+              Id: ReplicateCOHDataToSecondaryBucket
+              Prefix: !Sub "coh/${AWS::AccountId}/${ResourcePrefix}-coh/data/" # Hardcoded export name
+              Status: Enabled
+            - !Ref 'AWS::NoValue'
       LifecycleConfiguration:
         Rules:
           - Id: Object&Version Expiration
@@ -437,7 +473,9 @@ Resources:
                   - s3:ReplicateObject
                   - s3:ReplicateDelete
                   - s3:ReplicateTags
-                Resource: !Sub "arn:${AWS::Partition}:s3:::${ResourcePrefix}-${DestinationAccountId}-data-exports/*/${AWS::AccountId}/*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${ResourcePrefix}-${DestinationAccountId}-data-exports/*/${AWS::AccountId}/*"
+                  - !If [NonEmptySecondaryDestinationBucket, !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}/*/${AWS::AccountId}/*", !Ref 'AWS::NoValue']
 
   # CUR2
 
