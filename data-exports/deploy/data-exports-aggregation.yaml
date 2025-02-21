@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: AWS Billing Data Export Aggregation v0.1.7
+Description: AWS Billing Data Export Aggregation v0.2.0
 Metadata:
 
   AWS::CloudFormation::Interface:
@@ -44,7 +44,8 @@ Metadata:
         default: "Enable Split Cost Allocation Data (SCAD) in CUR 2.0"
       TimeGranularity:
         default: "CUR 2.0 Granularity. Do not change."
-      SecondaryDestinationBucket:
+      LakeFormationEnabled:
+        default: "I have LakeFormation permission model in place for this account & my CFN deployment credentials have administrative rights on LakeFormation"      SecondaryDestinationBucket:
         default: "Secondary Destination Bucket Name. Keep it Empty."
 
 
@@ -105,6 +106,11 @@ Parameters:
     Description: Changing of this parameter will require redeployment of this Stack, purging of data in Destination and then additional Backfill request. HOURLY is a recommended option unless your AWS invoice is more then $50M (in this case contact your TAM when installing).
     Default: "HOURLY"
     AllowedValues: ["HOURLY", "DAILY", "MONTHLY"]
+  LakeFormationEnabled:
+    Type: String
+    Description: Choose 'yes' if Lake Formation permission model is in place for the account. If you are not sure, leave it as 'no'. You need to install cid-lakeformation-prerequisite.yaml first.
+    Default: "no"
+    AllowedValues: ["yes", "no"]
   SecondaryDestinationBucket:
     Type: String
     Description: Leave Empty. A Bucket name for optional supplementary data replication. If not empty, the export data will be replicated to this bucket in addition to the default replication destination. Keep it empty if unsure.
@@ -133,6 +139,10 @@ Conditions:
       - !Condition ManageCUR2
       - !Condition ManageFOCUS
       - !Condition ManageCOH
+  DeploySourceS3:
+    Fn::And:
+      - !Condition IsSourceAccount
+      - !Condition DeployDataExport
   DeployCOHServiceRole:  !And [!Condition IsSourceAccount, !Condition ManageCOH]
   DeployCUR2ViaCFN:      !And [!Condition IsSourceAccount, !Condition ManageCUR2,        !Condition RegionSupportsDataExportsViaCFN]
   DeployFOCUSViaCFN:     !And [!Condition IsSourceAccount, !Condition ManageFOCUS,       !Condition RegionSupportsDataExportsViaCFN]
@@ -145,6 +155,11 @@ Conditions:
   DeployCOHTable:        !And [!Condition IsDestinationAccount, !Condition ManageCOH]
   DeployAnyExportViaLambda: !Or [!Condition DeployCUR2ViaLambda, !Condition DeployFOCUSViaLambda, !Condition DeployCOHViaLambda]
   DeployAnyTable: !Or [!Condition DeployFOCUSTable, !Condition DeployCUR2Table, !Condition DeployCOHTable]
+
+  NeedLakeFormationEnabledDB: !And [ !Equals [ !Ref LakeFormationEnabled, "yes"], !Condition DeployAnyTable]
+  NeedLakeFormationEnabledCOH:    !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageCOH]
+  NeedLakeFormationEnabledCUR2:   !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageCUR2]
+  NeedLakeFormationEnabledFOCUS:  !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageFOCUS]
 
 Mappings:
   DataExports:
@@ -279,7 +294,7 @@ Resources:
 
   SourceS3:
     Type: AWS::S3::Bucket
-    Condition: DeployDataExport
+    Condition: DeploySourceS3
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
@@ -362,6 +377,9 @@ Resources:
             Status: Enabled
             NoncurrentVersionExpirationInDays: 32 # 1 month
             ExpirationInDays: 64 # 2 months
+      Tags: # Hacky way to manage conditional dependencies
+        - Key: IgnoreConditionalDependency
+          Value: !If [IsDestinationAccount, !Ref DestinationS3, '']
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -374,7 +392,7 @@ Resources:
 
   SourceS3BucketPolicy:
     Type: 'AWS::S3::BucketPolicy'
-    Condition: DeployDataExport
+    Condition: DeploySourceS3
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
@@ -419,7 +437,7 @@ Resources:
                 aws:SourceAccount: !Ref AWS::AccountId
 
   ReplicationRole:
-    Condition: DeployDataExport
+    Condition: DeploySourceS3
     Type: AWS::IAM::Role
     Properties:
       Path: !Sub /${ResourcePrefix}/
@@ -1346,6 +1364,66 @@ Resources:
         }
 
 
+  LakeFormationTagsForDatabase:
+    Type: AWS::LakeFormation::TagAssociation
+    Condition: NeedLakeFormationEnabledDB
+    Properties:
+      Resource:
+        Database:
+          CatalogId: !Ref "AWS::AccountId"
+          Name: !Ref CIDDatabase
+      LFTags:
+        - TagKey: !ImportValue cid-LakeFormation-TagKey # you need to install cid-lakeformation-prerequisite.yaml
+          TagValues:
+            - !ImportValue cid-LakeFormation-TagValue
+          CatalogId: !Ref "AWS::AccountId"
+
+  LakeFormationTagsForCUR2:
+    Type: AWS::LakeFormation::TagAssociation
+    Condition: NeedLakeFormationEnabledCUR2
+    Properties:
+      Resource:
+        Table:
+          CatalogId: !Ref "AWS::AccountId"
+          DatabaseName: !Ref CIDDatabase
+          Name: !Ref CURTable
+      LFTags:
+        - TagKey: !ImportValue cid-LakeFormation-TagKey  # you need to install cid-lakeformation-prerequisite.yaml
+          TagValues:
+            - !ImportValue cid-LakeFormation-TagValue
+          CatalogId: !Ref "AWS::AccountId"
+
+  LakeFormationTagsForCOH:
+    Type: AWS::LakeFormation::TagAssociation
+    Condition: NeedLakeFormationEnabledCOH
+    Properties:
+      Resource:
+        Table:
+          CatalogId: !Ref "AWS::AccountId"
+          DatabaseName: !Ref CIDDatabase
+          Name: !Ref COHTable
+      LFTags:
+        - TagKey: !ImportValue cid-LakeFormation-TagKey  # you need to install cid-lakeformation-prerequisite.yaml
+          TagValues:
+            - !ImportValue cid-LakeFormation-TagValue
+          CatalogId: !Ref "AWS::AccountId"
+
+  LakeFormationTagsForFOCUS:
+    Type: AWS::LakeFormation::TagAssociation
+    Condition: NeedLakeFormationEnabledFOCUS
+    Properties:
+      Resource:
+        Table:
+          CatalogId: !Ref "AWS::AccountId"
+          DatabaseName: !Ref CIDDatabase
+          Name: !Ref FOCUSTable
+      LFTags:
+        - TagKey: !ImportValue cid-LakeFormation-TagKey  # you need to install cid-lakeformation-prerequisite.yaml
+          TagValues:
+            - !ImportValue cid-LakeFormation-TagValue
+          CatalogId: !Ref "AWS::AccountId"
+
+
 ###########################################################################
 # Generic Resources
 ###########################################################################
@@ -1581,7 +1659,7 @@ Outputs:
     Value:  !Join [ '_', !Split [ '-', !Sub '${ResourcePrefix}_data_export' ] ] # replace '-' to '_'
     Export: { Name: 'cid-DataExports-Database'}
   LocalAccountBucket:
-    Condition: DeployDataExport
+    Condition: DeploySourceS3
     Description: Local Bucket Name which replicate objects to centralized bucket
     Value: !Sub ${ResourcePrefix}-${AWS::AccountId}-data-local
   ReadAccessPolicyARN:
