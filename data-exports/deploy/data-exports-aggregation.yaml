@@ -45,7 +45,8 @@ Metadata:
       TimeGranularity:
         default: "CUR 2.0 Granularity. Do not change."
       LakeFormationEnabled:
-        default: "I have LakeFormation permission model in place for this account & my CFN deployment credentials have administrative rights on LakeFormation"      SecondaryDestinationBucket:
+        default: "I have LakeFormation permission model in place for this account & my CFN deployment credentials have administrative rights on LakeFormation"
+      SecondaryDestinationBucket:
         default: "Secondary Destination Bucket Name. Keep it Empty."
 
 
