@@ -51,6 +51,9 @@ Parameters:
     Type: String
     Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
     Default: ""
+  LambdaManageGlueTableARN:
+    Type: String
+    Description: ARN of a Lambda for Managing GlueTable
 
 Outputs:
   StepFunctionARN:
@@ -270,6 +273,61 @@ Resources:
       Targets:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+
+  ModuleGlueTable:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: budgets_data
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+        - Name: payer_id
+          Type: string
+        - Name: year
+          Type: string
+        - Name: month
+          Type: string
+        StorageDescriptor:
+          Columns:
+          - Name: budgetname
+            Type: string
+          - Name: budgetlimit
+            Type: struct<Amount:string,Unit:string>
+          - Name: costfilters
+            Type: struct<Filter:array<string>>
+          - Name: costtypes
+            Type: struct<IncludeTax:boolean,IncludeSubscription:boolean,UseBlended:boolean,IncludeRefund:boolean,IncludeCredit:boolean,IncludeUpfront:boolean,IncludeRecurring:boolean,IncludeOtherSubscription:boolean,IncludeSupport:boolean,IncludeDiscount:boolean,UseAmortized:boolean>
+          - Name: timeunit
+            Type: string
+          - Name: timeperiod
+            Type: struct<Start:string,End:string>
+          - Name: calculatedspend
+            Type: struct<ActualSpend:struct<Amount:string,Unit:string>,ForecastedSpend:struct<Amount:string,Unit:string>>
+          - Name: budgettype
+            Type: string
+          - Name: lastupdatedtime
+            Type: string
+          - Name: collection_time
+            Type: string
+          - Name: account_id
+            Type: string
+          - Name: account_name
+            Type: string
+          - Name: tags
+            Type: array<struct<Key:string,Value:string>>
+          - Name: plannedbudgetlimits_flat
+            Type: array<string>
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: Account_ID,Account_Name,BudgetLimit,BudgetName,BudgetType,CalculatedSpend,CostFilters,CostTypes,LastUpdatedTime,PlannedBudgetLimits_Flat,Tags,TimePeriod,TimeUnit,collection_time
+        Parameters:
+          UPDATED_BY_CRAWLER: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine

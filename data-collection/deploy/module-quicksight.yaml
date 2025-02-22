@@ -1,4 +1,3 @@
-#IAKOV's version
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Retrieves Quicksight User, Group, Group Members data in Data Collection Account only
 Parameters:
@@ -46,6 +45,9 @@ Parameters:
     Type: String
     Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
     Default: ""
+  LambdaManageGlueTableARN:
+    Type: String
+    Description: ARN of a Lambda for Managing GlueTable
 
 Conditions:
   NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
@@ -304,6 +306,109 @@ Resources:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-groupmembership-data/"
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-group-data/"
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-user-data/"
+
+  UserGlueTable:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: quicksight_user_data
+        TableType: EXTERNAL_TABLE
+        PartitionKeys: []
+        StorageDescriptor:
+          Columns:
+          - Name: arn
+            Type: string
+          - Name: username
+            Type: string
+          - Name: email
+            Type: string
+          - Name: role
+            Type: string
+          - Name: identitytype
+            Type: string
+          - Name: active
+            Type: boolean
+          - Name: principalid
+            Type: string
+          - Name: account_id
+            Type: string
+          - Name: namespace
+            Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-user-data/"
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: Active,Arn,Email,IdentityType,PrincipalId,Role,UserName,account_id,namespace
+        Parameters:
+          UPDATED_BY_CRAWLER: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
+
+  GroupGlueTable:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: quicksight_group_data
+        TableType: EXTERNAL_TABLE
+        PartitionKeys: []
+        StorageDescriptor:
+          Columns:
+          - Name: arn
+            Type: string
+          - Name: groupname
+            Type: string
+          - Name: principalid
+            Type: string
+          - Name: account_id
+            Type: string
+          - Name: namespace
+            Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-group-data/"
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: Arn,GroupName,PrincipalId,account_id,namespace
+        Parameters:
+          UPDATED_BY_CRAWLER: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
+
+  GroupMembershipGlueTable:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: quicksight_groupmembership_data
+        TableType: EXTERNAL_TABLE
+        PartitionKeys: []
+        StorageDescriptor:
+          Columns:
+          - Name: arn
+            Type: string
+          - Name: membername
+            Type: string
+          - Name: groupname
+            Type: string
+          - Name: grouparn
+            Type: string
+          - Name: account_id
+            Type: string
+          - Name: namespace
+            Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-groupmembership-data/"
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: Arn,GroupArn,GroupName,MemberName,account_id,namespace
+        Parameters:
+          UPDATED_BY_CRAWLER: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
