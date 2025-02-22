@@ -51,6 +51,9 @@ Parameters:
     Type: String
     Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
     Default: ""
+  LambdaManageGlueTableARN:
+    Type: String
+    Description: ARN of a Lambda for Managing GlueTable
 
 Conditions:
   NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
@@ -458,6 +461,83 @@ Resources:
       Targets:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-detail-data/"
+
+  ModuleGlueTable:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: health_events_detail_data
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+        - Name: payer_id
+          Type: string
+        - Name: year
+          Type: string
+        - Name: month
+          Type: string
+        - Name: day
+          Type: string
+        StorageDescriptor:
+          Columns:
+          - Name: payer_account_id
+            Type: string
+          - Name: account_id
+            Type: string
+          - Name: event_code
+            Type: string
+          - Name: event_category
+            Type: string
+          - Name: event_scope
+            Type: string
+          - Name: status_code
+            Type: string
+          - Name: service
+            Type: string
+          - Name: region
+            Type: string
+          - Name: event_description
+            Type: string
+          - Name: affected_entity_value
+            Type: string
+          - Name: affected_entity_arn
+            Type: string
+          - Name: affected_entity_status_code
+            Type: string
+          - Name: affected_entity_last_update
+            Type: string
+          - Name: affected_entity_url
+            Type: string
+          - Name: availability_zone
+            Type: string
+          - Name: deprecated_versions
+            Type: string
+          - Name: tags
+            Type: string
+          - Name: start_time
+            Type: string
+          - Name: end_time
+            Type: string
+          - Name: last_updated_time
+            Type: string
+          - Name: event_metadata
+            Type: string
+          - Name: event_source
+            Type: string
+          - Name: event_arn
+            Type: string
+          - Name: ingestion_time
+            Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-detail-data/"
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: account_id,affected_entity_arn,affected_entity_last_update,affected_entity_status_code,affected_entity_url,affected_entity_value,availability_zone,deprecated_versions,end_time,event_arn,event_category,event_code,event_description,event_metadata,event_scope,event_source,ingestion_time,last_updated_time,payer_account_id,region,service,start_time,status_code,tags
+        Parameters:
+          UPDATED_BY_CRAWLER: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine

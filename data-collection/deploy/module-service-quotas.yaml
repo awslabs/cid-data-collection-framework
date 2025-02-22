@@ -54,13 +54,12 @@ Parameters:
     Type: String
     Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
     Default: ""
-Outputs:
-  StepFunctionARN:
-    Description: ARN for the module's Step Function
-    Value: !GetAtt ModuleStepFunction.Arn
+  LambdaManageGlueTableARN:
+    Type: String
+    Description: ARN of a Lambda for Managing GlueTable
 
 Conditions:
-  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ] 
+  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
 
 Resources:
   LambdaRole:
@@ -288,6 +287,117 @@ Resources:
             }
           }
         }
+
+  DataGlueTable:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: service_quotas_data
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+        - Name: payer_id
+          Type: string
+        - Name: account_id
+          Type: string
+        - Name: region
+          Type: string
+        StorageDescriptor:
+          Columns:
+          - Name: servicecode
+            Type: string
+          - Name: servicename
+            Type: string
+          - Name: quotaarn
+            Type: string
+          - Name: quotacode
+            Type: string
+          - Name: quotaname
+            Type: string
+          - Name: value
+            Type: double
+          - Name: unit
+            Type: string
+          - Name: adjustable
+            Type: boolean
+          - Name: globalquota
+            Type: boolean
+          - Name: usagemetric
+            Type: struct<MetricNamespace:string,MetricName:string,MetricDimensions:struct<Class:string,Resource:string,Service:string,Type:string>,MetricStatisticRecommendation:string>
+          - Name: period
+            Type: struct<PeriodValue:int,PeriodUnit:string>
+          - Name: quotaappliedatlevel
+            Type: string
+          - Name: defaultvalue
+            Type: double
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: Adjustable,DefaultValue,GlobalQuota,Period,QuotaAppliedAtLevel,QuotaArn,QuotaCode,QuotaName,ServiceCode,ServiceName,Unit,UsageMetric,Value
+        Parameters:
+          UPDATED_BY_CRAWLER: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
+
+  ModuleGlueTable:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: service_quotas_history
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+        - Name: payer_id
+          Type: string
+        - Name: account_id
+          Type: string
+        - Name: region
+          Type: string
+        StorageDescriptor:
+          Columns:
+          - Name: id
+            Type: string
+          - Name: servicecode
+            Type: string
+          - Name: servicename
+            Type: string
+          - Name: quotacode
+            Type: string
+          - Name: quotaname
+            Type: string
+          - Name: desiredvalue
+            Type: double
+          - Name: status
+            Type: string
+          - Name: created
+            Type: string
+          - Name: lastupdated
+            Type: string
+          - Name: requester
+            Type: string
+          - Name: quotaarn
+            Type: string
+          - Name: globalquota
+            Type: boolean
+          - Name: unit
+            Type: string
+          - Name: quotarequestedatlevel
+            Type: string
+          - Name: caseid
+            Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-history/"
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: CaseId,Created,DesiredValue,GlobalQuota,Id,LastUpdated,QuotaArn,QuotaCode,QuotaName,QuotaRequestedAtLevel,Requester,ServiceCode,ServiceName,Status,Unit
+        Parameters:
+          UPDATED_BY_CRAWLER: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
+
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
