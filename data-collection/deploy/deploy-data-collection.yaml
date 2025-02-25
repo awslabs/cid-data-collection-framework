@@ -143,7 +143,7 @@ Parameters:
     Default: "rate(14 days)"
   ScheduleFrequent:
     Type: String
-    Description: EventBridge schedule to trigger data collection for Cost Anomalies, Budgets, Support Cases and Health Events modules (see docs for tailoring the schedule for each module). Recommended value: rate(1 day).  Increasing data collection frequency will trigger additional cost, avoid setting the data collection schedule to more than once per day.
+    Description: "EventBridge schedule to trigger data collection for Cost Anomalies, Budgets, Support Cases and Health Events modules (see docs for tailoring the schedule for each module). Recommended value: rate(1 day).  Increasing data collection frequency will trigger additional cost, avoid setting the data collection schedule to more than once per day."
     Default: "rate(1 day)"
   RegionsInScope:
     Type: String
