@@ -1055,7 +1055,7 @@ Mappings:
                 Type: string
               - Name: runningmode
                 Type: string
-              - Name: operatingsystemname
+              - Name: operatingsystem
                 Type: string
               - Name: protocol
                 Type: string
@@ -1144,6 +1144,7 @@ Resources:
           import os
           import json
           import logging
+          import time
           from functools import partial, lru_cache
           from datetime import datetime, date, timezone
 
@@ -1305,7 +1306,7 @@ Resources:
                         'DirectoryId': dir_id,
                         'State': workspace['State'],
                         'ConnectionStatus': connection_info.get('ConnectionState', 'N/A'),
-                        'LastConnected': connection_info.get('LastKnownUserConnectionTimestamp', 'Never').isoformat() if isinstance(connection_info.get('LastKnownUserConnectionTimestamp'), datetime) else "01/01/01 00:00:00",
+                        'LastConnected': connection_info.get('LastKnownUserConnectionTimestamp', 'Never').strftime('%x %X') if isinstance(connection_info.get('LastKnownUserConnectionTimestamp'), datetime) else "01/01/01 00:00:00",
                         'LastInventoryRun': time.strftime('%x %X'),
                         'RunningMode': workspace.get("WorkspaceProperties", {}).get("RunningMode", "N/A"),
                         'ComputeType': workspace.get("WorkspaceProperties", {}).get("ComputeTypeName", "N/A"),
@@ -1954,7 +1955,7 @@ Resources:
           , CAST(parse_datetime(lastconnected, 'MM/dd/yy HH:mm:ss') AS timestamp) lastconnected
           , "lastinventoryrun"
           , "runningmode"
-          , "operatingsystemname"
+          , "operatingsystem"
           , "protocol"
           , "computername"
           , "ipaddress"
