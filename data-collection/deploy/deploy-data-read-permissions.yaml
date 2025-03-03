@@ -25,6 +25,7 @@ Metadata:
           - IncludeHealthEventsModule
           - IncludeInventoryCollectorModule
           - IncludeRDSUtilizationModule
+          - IncludeEUCUtilizationModule
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
@@ -59,6 +60,8 @@ Metadata:
         default: "Include Inventory Collector Module"
       IncludeRDSUtilizationModule:
         default: "Include RDS Utilization Data Collection Module"
+      IncludeEUCUtilizationModule:
+        default: "Include WorkSpaces Utilization Data Collection Module"
       IncludeRightsizingModule:
         default: "Include Rightsizing Recommendations Data Collection Module"
       IncludeTAModule:
@@ -138,6 +141,11 @@ Parameters:
     Description: Collects RDS CloudWatch metrics from your accounts
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeEUCUtilizationModule:
+    Type: String
+    Description: Collects WorkSpaces CloudWatch metrics from your accounts
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeRightsizingModule:
     Type: String
     Description: "Collects AWS Cost Explorer Rightsizing Recommendations"
@@ -208,6 +216,7 @@ Resources:
         IncludeInventoryCollectorModule: !Ref IncludeInventoryCollectorModule
         IncludeECSChargebackModule: !Ref IncludeECSChargebackModule
         IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
+        IncludeEUCUtilizationModule: !Ref IncludeEUCUtilizationModule       
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
         IncludeServiceQuotasModule: !Ref IncludeServiceQuotasModule
@@ -242,6 +251,8 @@ Resources:
           ParameterValue: !Ref IncludeECSChargebackModule
         - ParameterKey: IncludeRDSUtilizationModule
           ParameterValue: !Ref IncludeRDSUtilizationModule
+        - ParameterKey: IncludeEUCUtilizationModule
+          ParameterValue: !Ref IncludeEUCUtilizationModule          
         - ParameterKey: IncludeBudgetsModule
           ParameterValue: !Ref IncludeBudgetsModule
         - ParameterKey: IncludeTransitGatewayModule

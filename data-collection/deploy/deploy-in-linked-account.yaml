@@ -16,6 +16,7 @@ Metadata:
         - IncludeECSChargebackModule
         - IncludeInventoryCollectorModule
         - IncludeRDSUtilizationModule
+        - IncludeEUCUtilizationModule
         - IncludeTAModule
         - IncludeSupportCasesModule
         - IncludeTransitGatewayModule
@@ -37,6 +38,8 @@ Metadata:
         default: 'Include ECS Chargeback Data Collection Module'
       IncludeRDSUtilizationModule:
         default: 'Include RDS Utilization Data Collection Module'
+      IncludeEUCUtilizationModule:
+        default: 'Include WorkSpaces Utilization Data Collection Module'     
       IncludeBudgetsModule:
         default: 'Include Budgets Collection Module'
       IncludeTransitGatewayModule:
@@ -81,6 +84,11 @@ Parameters:
     Description: Collects RDS CloudWatch metrics from your accounts
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeEUCUtilizationModule:
+    Type: String
+    Description: Collects WorkSpaces CloudWatch metrics from your accounts
+    AllowedValues: ['yes', 'no']
+    Default: 'no' 
   IncludeBudgetsModule:
     Type: String
     Description: Collects budgets from your accounts
@@ -112,6 +120,9 @@ Conditions:
     - "yes"
   IncludeRDSUtilizationModulePolicy: !Equals
     - !Ref IncludeRDSUtilizationModule
+    - "yes"
+  IncludeEUCUtilizationModulePolicy: !Equals
+    - !Ref IncludeEUCUtilizationModule
     - "yes"
   IncludeBudgetsModulePolicy: !Equals
     - !Ref IncludeBudgetsModule
@@ -146,6 +157,7 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}budgets-LambdaRole"
                   - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}ecs-chargeback-LambdaRole"
                   - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}inventory-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}workspaces-metrics-LambdaRole"
                   - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}rds-usage-LambdaRole"
                   - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}transit-gateway-LambdaRole"
                   - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}trusted-advisor-LambdaRole"
@@ -298,6 +310,32 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
+  EUCUtilizationPolicy:
+    Type: 'AWS::IAM::Policy'
+    Condition: IncludeEUCUtilizationModulePolicy
+    Properties:
+      PolicyName: EUCUtilizationPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "workspaces:DescribeWorkspaces"
+            Resource: "*"  ## Policy is used for scanning of a wide range of resources
+          - Effect: "Allow"
+            Action:
+              - "ec2:DescribeRegions"
+              - "cloudwatch:GetMetricStatistics"
+              - "cloudwatch:ListMetrics"
+            Resource: "*" ## Policy is used for scanning of a wide range of resources
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+
   TransitGatewayPolicy:
     Type: 'AWS::IAM::Policy'
     Condition: IncludeTransitGatewayModulePolicy

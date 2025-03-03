@@ -30,6 +30,7 @@ Metadata:
           - IncludeInventoryCollectorModule
           - IncludeOrgDataModule
           - IncludeRDSUtilizationModule
+          - IncludeEUCUtilizationModule
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
@@ -37,6 +38,14 @@ Metadata:
           - IncludeLicenseManagerModule
           - IncludeQuickSightModule
           - IncludeServiceQuotasModule
+      - Label:
+          default: 'EUC Module Configuration'
+        Parameters:
+          - IncludeEUCUtilizationModule
+      - Label:
+          default: 'EUC Module Settings'
+        Parameters:
+          - EUCAccountIDs        
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket prefix'
@@ -76,6 +85,10 @@ Metadata:
         default: 'Include ECS Chargeback Data Collection Module'
       IncludeRDSUtilizationModule:
         default: 'Include RDS Utilization Data Collection Module'
+      IncludeEUCUtilizationModule:
+        default: 'Include WorkSpaces Utilization Data Collection Module'
+      EUCAccountIDs:
+        default: 'WorkSpaces Account IDs (optional)'
       IncludeOrgDataModule:
         default: 'Include AWS Organization Data Collection Module'
       IncludeBudgetsModule:
@@ -207,6 +220,15 @@ Parameters:
     Description: Collects RDS CloudWatch metrics from your accounts
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeEUCUtilizationModule:
+    Type: String
+    Description: Collects WorkSpaces CloudWatch metrics from your accounts
+    AllowedValues: ['yes', 'no']
+    Default: 'no'  
+  EUCAccountIDs:
+    Type: String
+    Description: "Optional, If you enable EUC Utilization or Inventory module and you use Amazon WorkSpaces, please provide a comma-separated list of account IDs where WorkSpaces are deployed. If left blank, metrics will be collected from all linked accounts in the Organization."
+    Default: ""
   IncludeOrgDataModule:
     Type: String
     Description: Collects AWS Organizations data such as account Id, account name, organization parent and specified tags
@@ -262,6 +284,7 @@ Conditions:
   DeployComputeOptimizerModule: !Equals [ !Ref IncludeComputeOptimizerModule, "yes"]
   DeployEcsChargebackModule: !Equals [ !Ref IncludeECSChargebackModule, "yes"]
   DeployRDSUtilizationModule: !Equals [ !Ref IncludeRDSUtilizationModule, "yes"]
+  DeployEUCUtilizationModule: !Equals [ !Ref IncludeEUCUtilizationModule, "yes"]
   DeployOrgDataModule: !Equals [ !Ref IncludeOrgDataModule, "yes"]
   DeployBudgetsModule: !Equals [ !Ref IncludeBudgetsModule, "yes"]
   DeployTransitGatewayModule: !Equals [ !Ref IncludeTransitGatewayModule, "yes"]
@@ -274,6 +297,7 @@ Conditions:
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
+    - !Condition DeployEUCUtilizationModule
   DeployAccountCollector: !Or
     - Fn::Or:
       - !Condition DeployTAModule
@@ -293,6 +317,7 @@ Conditions:
       - !Condition DeployLicenseManagerModule
       - !Condition DeployQuickSightModule
       - !Condition DeployServiceQuotasModule
+      - !Condition DeployEUCUtilizationModule 
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
@@ -1152,6 +1177,33 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        RegionsInScope:
+          Fn::If:
+            - RegionsInScopeIsEmpty
+            - !Sub "${AWS::Region}"
+            - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
+
+  EUCUsageModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployEUCUtilizationModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-workspaces-metrics.yaml"
+      Parameters:
+        DatabaseName: !Ref DatabaseName
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
+        Schedule: !Ref Schedule
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        EUCAccountIDs: !Ref EUCAccountIDs
         RegionsInScope:
           Fn::If:
             - RegionsInScopeIsEmpty
