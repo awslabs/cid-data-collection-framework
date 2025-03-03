@@ -636,7 +636,8 @@ Resources:
                   compressed_data.seek(0)
                   response = s3.Bucket(BUCKET_NAME).put_object(
                       Key=key,
-                      Body=compressed_data
+                      Body=compressed_data,
+                      ExpectedBucketOwner=(account)
                   )
                   logger.info(f"Successfully exported {len(results)} findings to s3://{BUCKET_NAME}/{key}")
               except ClientError as error_handle:
