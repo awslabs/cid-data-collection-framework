@@ -54,6 +54,10 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
+  DataBucketsKmsKeysArns:
+    Type: String
+    Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
+    Default: ""
 
 Outputs:
   StepFunctionARN:
@@ -71,7 +75,7 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Service: cloudformation.amazonaws.com
+              Service: !Sub "cloudformation.${AWS::URLSuffix}"
             Action:
               - 'sts:AssumeRole'
       Policies:
@@ -138,6 +142,7 @@ Resources:
                   - iam:GetRolePolicy
                   - iam:PutRolePolicy
                   - iam:TagRole
+                  - iam:UntagRole
                 Resource:
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ResourcePrefix}Compute-Optimizer-Replication-*'
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/StackSet-${ResourcePrefix}ComputeOptimizer*' # For Compatibility with older versions: Shorter version of StackSetName
@@ -165,6 +170,8 @@ Resources:
           ParameterValue: !Ref ManagementAccountID
         - ParameterKey: ResourcePrefix
           ParameterValue: !Ref ResourcePrefix
+        - ParameterKey: DataBucketsKmsKeysArns
+          ParameterValue: !Ref DataBucketsKmsKeysArns
       StackInstancesGroup:
         - DeploymentTargets:
             Accounts:
@@ -192,6 +199,12 @@ Resources:
           ResourcePrefix:
             Type: String
             Description: Resource Prefix
+          DataBucketsKmsKeysArns:
+            Type: String
+            Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
+            Default: ""
+        Conditions:
+          NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
         Resources:
           BucketPolicy:
             Type: AWS::S3::BucketPolicy
@@ -202,14 +215,14 @@ Resources:
                 Statement:
                 - Effect: Allow
                   Principal:
-                    Service: compute-optimizer.amazonaws.com
+                    Service: !Sub "compute-optimizer.${AWS::URLSuffix}"
                   Action:
                   - s3:GetBucketAcl
                   - s3:GetBucketPolicyStatus
                   Resource: !Sub "arn:${AWS::Partition}:s3:::${Name}.${AWS::Region}"
                 - Effect: Allow
                   Principal:
-                    Service: compute-optimizer.amazonaws.com
+                    Service: !Sub "compute-optimizer.${AWS::URLSuffix}"
                   Action: s3:PutObject
                   Condition:
                     StringEquals:
@@ -244,7 +257,8 @@ Resources:
                 - Action: ['sts:AssumeRole']
                   Effect: Allow
                   Principal:
-                    Service: [s3.amazonaws.com]
+                    Service:
+                      - !Sub "s3.${AWS::URLSuffix}"
               Policies:
               - PolicyName: Replication
                 PolicyDocument:
@@ -265,6 +279,17 @@ Resources:
                     - s3:GetObjectVersionTagging
                     Effect: 'Allow'
                     Resource: !Sub arn:${AWS::Partition}:s3:::${DestinationBucket}/*
+              - !If
+                - NeedDataBucketsKms
+                - PolicyName: "KMS"
+                  PolicyDocument:
+                    Version: "2012-10-17"
+                    Statement:
+                      - Effect: "Allow"
+                        Action:
+                          - "kms:GenerateDataKey"
+                        Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+                - !Ref AWS::NoValue
           S3Bucket:
             Type: AWS::S3::Bucket
             DeletionPolicy: Delete
@@ -305,7 +330,6 @@ Resources:
                     Status: Enabled
                     NoncurrentVersionExpiration:
                       NoncurrentDays: 1
-                      NewerNoncurrentVersions: 1
       Tags: # Hacky way to manage dependencies
         - Key: IgnoreMeIamOnlyWorkaround
           Value: !GetAtt StackSetExecutionRole.Arn
@@ -321,7 +345,7 @@ Resources:
             Effect: Allow
             Principal:
               Service:
-                - lambda.amazonaws.com
+                - !Sub "lambda.${AWS::URLSuffix}"
         Version: 2012-10-17
       ManagedPolicyArns:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -361,7 +385,6 @@ Resources:
           import logging
           from datetime import date
           from functools import partial
-          import boto3
 
           BUCKET_PREFIX = os.environ["BUCKET_PREFIX"]
           INCLUDE_MEMBER_ACCOUNTS = os.environ.get("INCLUDE_MEMBER_ACCOUNTS", 'yes').lower() == 'yes'
@@ -371,6 +394,12 @@ Resources:
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+          #ensure we get latest boto3
+          from pip._internal.cli.main import main, sys
+          logging.getLogger('pip').setLevel(logging.ERROR) # Silence pip's logger
+          main(['install', '-I', 'boto3', '--target', '/tmp/', '--no-cache-dir', '--disable-pip-version-check'])
+          sys.path.insert(0,'/tmp/')
+          import boto3 #pylint: disable=wrong-import-position
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               logger.info(f"Event data {json.dumps(event)}")
@@ -405,6 +434,7 @@ Resources:
                           'ecs_service':  co.export_ecs_service_recommendations,
                           'license':      co.export_license_recommendations,
                           'rds_database': partial(co.export_rds_database_recommendations, recommendationPreferences={'cpuVendorArchitectures': ARCH}),
+                          'idle':         co.export_idle_recommendations,
                       }
                       bucket = BUCKET_PREFIX + '.' + region
                       logger.info(f"INFO: bucket={bucket}")
@@ -586,7 +616,7 @@ Resources:
           - Effect: Allow
             Principal:
               Service:
-                - lambda.amazonaws.com
+                - !Sub "lambda.${AWS::URLSuffix}"
             Action:
               - sts:AssumeRole
       Path: /

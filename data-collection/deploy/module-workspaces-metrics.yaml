@@ -1,0 +1,667 @@
+# CID Module - WorkSpaces CloudWatch Metrics
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Retrieves Inventory data for the chosen service
+Transform: AWS::LanguageExtensions
+Parameters:
+  DatabaseName:
+    Type: String
+    Description: Name of the Athena database to be created to hold lambda information
+    Default: optimization_data
+  DataBucketsKmsKeysArns:
+    Type: String
+    Description: KMS Key ARNs used for encrypting data in S3 buckets (comma separated)    
+  DestinationBucket:
+    Type: String
+    Description: Name of the S3 Bucket to be created to hold data information
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  DestinationBucketARN:
+    Type: String
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold
+      rightsizing information
+  MultiAccountRoleName:
+    Type: String
+    Description: Name of the IAM role deployed in all accounts which can retrieve AWS Data.
+  CFDataName:
+    Type: String
+    Description: The name of what this cf is doing.
+    Default: workspaces-metrics
+  GlueRoleARN:
+    Type: String
+    Description: Arn for the Glue Crawler role
+  Schedule:
+    Type: String
+    Description: EventBridge Schedule to trigger the data collection
+    Default: rate(7 day)
+  ResourcePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you
+      may wish to add a dash at the end to make more readable
+  RegionsInScope:
+    Type: String
+    Description: 'Comma Delimited list of AWS regions from which data about
+      resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1'
+  LambdaAnalyticsARN:
+    Type: String
+    Description: Arn of lambda for Analytics
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the Account Collector Lambda
+  CodeBucket:
+    Type: String
+    Description: Source code bucket
+  StepFunctionTemplate:
+    Type: String
+    Description: S3 key to the JSON template for the StepFunction
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
+  EUCAccountIDs:
+    Type: String
+    Description: "Optional comma-separated list of account IDs to collect WorkSpaces metrics from. If left blank, metrics will be checked from all linked accounts in Organisation."
+    Default: ""
+
+Outputs:
+  StepFunctionARN:
+    Description: ARN for the module's Step Function
+    Value: !GetAtt ModuleStepFunction.Arn
+
+Conditions:
+  NeedDataBucketsKms: !Not
+    - !Equals
+      - !Ref DataBucketsKmsKeysArns
+      - ''
+
+Resources:
+  WorkSpacesMetricsTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: inventory_workspaces_metrics_data
+        StorageDescriptor:
+          Columns:
+            - Name: WorkspaceId
+              Type: string
+            - Name: UserName
+              Type: string
+            - Name: State
+              Type: string
+            - Name: BundleId
+              Type: string
+            - Name: DirectoryId
+              Type: string
+            - Name: ComputerName
+              Type: string
+            - Name: RunningMode
+              Type: string
+            - Name: RootVolumeSizeGib
+              Type: int
+            - Name: UserVolumeSizeGib
+              Type: int
+            - Name: ComputeTypeName
+              Type: string
+            - Name: Environment
+              Type: string
+            - Name: Schedule
+              Type: string
+            - Name: Application
+              Type: string
+            - Name: Project
+              Type: string
+            - Name: Timestamp
+              Type: string
+            - Name: CPUUsage
+              Type: int
+            - Name: MemoryUsage
+              Type: int
+            - Name: InSessionLatency
+              Type: int
+            - Name: UserVolumeDiskUsage
+              Type: int
+            - Name: RootVolumeDiskUsage
+              Type: int
+            - Name: UpTime
+              Type: int
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/workspaces-metrics-data/"
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: WorkspaceId,UserName,State,BundleId,DirectoryId,ComputerName,RunningMode,RootVolumeSizeGib,UserVolumeSizeGib,ComputeTypeName,Environment,Schedule,Application,Project,Timestamp,CPUUsage,MemoryUsage,InSessionLatency,UserVolumeDiskUsage,RootVolumeDiskUsage,UpTime
+        PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: accountid
+            Type: string
+          - Name: region
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+        TableType: EXTERNAL_TABLE
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ResourcePrefix}${CFDataName}-LambdaRole
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - !Sub lambda.${AWS::URLSuffix}
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: AssumeMultiAccountRole
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !Sub arn:${AWS::Partition}:iam::*:role/${MultiAccountRoleName}
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource:
+                  - !Sub ${DestinationBucketARN}/*
+        - !If
+          - NeedDataBucketsKms
+          - PolicyName: KMS
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - kms:GenerateDataKey
+                  Resource: !Split
+                    - ','
+                    - !Ref DataBucketsKmsKeysArns
+          - !Ref AWS::NoValue
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: Need explicit name to identify role actions
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ResourcePrefix}${CFDataName}-Lambda
+      Description: !Sub Lambda Function to retrieve ${CFDataName}
+      Runtime: python3.12
+      Architectures:
+        - x86_64
+      Code:
+        ZipFile: |
+          """ Scan workspaces cloudwatch metrics and store info to s3 bucket
+          """
+          import os
+          import json
+          import logging
+          from datetime import datetime, timedelta, date
+          import concurrent.futures
+
+          import boto3
+          from botocore.exceptions import ClientError
+          from boto3.s3.transfer import S3Transfer
+
+          # Environment Variables
+          BUCKET = os.environ["BUCKET_NAME"]
+          PREFIX = os.environ["PREFIX"]
+          ROLE_NAME = os.environ['ROLENAME']
+          REGIONS = [r.strip() for r in os.environ["REGIONS"].split(',') if r]
+          ROLE_SESSION_NAME = os.environ['ROLE_SESSION_NAME']
+          METRIC_NAMESPACE = 'AWS/WorkSpaces'
+          METRIC_PERIOD = 3600
+          BATCH_SIZE = 100  # Number of workspaces to process in each batch
+          EUC_ACCOUNT_IDS = os.environ.get('EUC_ACCOUNT_IDS', '')
+
+          logger = logging.getLogger(__name__)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+
+          functions = {
+              'workspaces': {
+                  'regional': 1,
+                  'api': 'workspaces',
+                  'functions': [
+                      {
+                          'name': 'get_workspace_stats',
+                          'output_path': 'workspace-usage-data',
+                          'output_file_name': 'workspace_stats.json'
+                      }
+                  ]
+              }
+          }
+
+          METRICS_FOR_WORKSPACES = [
+              'CPUUsage',
+              'MemoryUsage',
+              'InSessionLatency',
+              'UserVolumeDiskUsage',
+              'RootVolumeDiskUsage',
+              'UpTime'
+          ]
+
+          TAGS_TO_RETRIEVE = [
+              'Environment',
+              'Schedule',
+              'Application',
+              'Project',
+          ]
+
+          def format_workspace(workspace):
+              output = {
+                  "WorkspaceId": workspace["WorkspaceId"],
+                  "UserName": workspace.get("UserName", ""),
+                  "State": workspace.get("State", ""),
+                  "BundleId": workspace.get("BundleId", ""),
+                  "DirectoryId": workspace.get("DirectoryId", ""),
+                  "ComputerName": workspace.get("ComputerName", ""),
+                  "WorkspaceProperties": workspace.get("WorkspaceProperties", {})
+              }
+              # Flatten WorkspaceProperties into individual columns
+              if "WorkspaceProperties" in workspace:
+                  props = workspace.get("WorkspaceProperties", {})
+                  # Add each property as a top-level field
+                  output["RunningMode"] = props.get("RunningMode", "")
+                  output["RunningModeAutoStopTimeoutInMinutes"] = props.get("RunningModeAutoStopTimeoutInMinutes", 0)
+                  output["RootVolumeSizeGib"] = props.get("RootVolumeSizeGib", 0)
+                  output["UserVolumeSizeGib"] = props.get("UserVolumeSizeGib", 0)
+                  output["ComputeTypeName"] = props.get("ComputeTypeName", "")
+                  output["OperatingSystemName"] = props.get("OperatingSystemName", "")
+                  
+                  # Handle the Protocols array
+                  if "Protocols" in props:
+                      output["Protocols"] = ",".join(props.get("Protocols", []))
+          
+              tags = {}
+              filtered_tags = {}
+              if "Tags" in workspace:
+                  for tag in workspace["Tags"]:
+                      tags[tag["Key"].replace(",", " ")] = tag["Value"].replace(",", " ")
+                  for tags_required in TAGS_TO_RETRIEVE:
+                      filtered_tags[tags_required] = tags[tags_required] if tags_required in tags else ''
+              output["tags"] = filtered_tags
+              return output
+
+          def get_metric_data(cwclient, metric_name, workspace_id, start_time, end_time):
+              try:
+                  response = cwclient.get_metric_statistics(
+                      Namespace=METRIC_NAMESPACE,
+                      MetricName=metric_name,
+                      Dimensions=[{'Name': 'WorkspaceId', 'Value': workspace_id}],
+                      StartTime=start_time,
+                      EndTime=end_time,
+                      Period=METRIC_PERIOD,
+                      Statistics=['Average']
+                  )
+
+                  if response['Datapoints']:
+                      latest_datapoint = max(response['Datapoints'], key=lambda x: x['Timestamp'])
+                      return {
+                          'Timestamp': latest_datapoint['Timestamp'].isoformat(),
+                          'Average': latest_datapoint['Average']
+                      }
+                  else:
+                      logger.info(f"No datapoints found for metric {metric_name} and workspace {workspace_id}")
+                      return None
+
+              except ClientError as e:
+                  logger.error(f"Error getting metric data for {workspace_id}: {e}")
+                  return None
+              except Exception as e:
+                  logger.error(f"Unexpected error getting metric data for {workspace_id}: {e}")
+                  return None
+
+          def process_single_workspace(workspace, cwclient, start_time, end_time):
+              try:
+                  datapoints = {}
+                  for metric in METRICS_FOR_WORKSPACES:
+                      metric_data = get_metric_data(cwclient, metric, workspace['WorkspaceId'],
+                                                  start_time, end_time)
+                      if metric_data:
+                          datapoints[metric] = metric_data
+
+                  workspace_data = format_workspace(workspace)
+                  workspace_data.update({
+                      'Timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                      'CPUUsage': int(round(datapoints['CPUUsage']['Average'])) if 'CPUUsage' in datapoints else 0,
+                      'MemoryUsage': int(round(datapoints['MemoryUsage']['Average'])) if 'MemoryUsage' in datapoints else 0,
+                      'InSessionLatency': int(round(datapoints['InSessionLatency']['Average'])) if 'InSessionLatency' in datapoints else 0,
+                      'UserVolumeDiskUsage': int(round(datapoints['UserVolumeDiskUsage']['Average'])) if 'UserVolumeDiskUsage' in datapoints else 0,
+                      'RootVolumeDiskUsage': int(round(datapoints['RootVolumeDiskUsage']['Average'])) if 'RootVolumeDiskUsage' in datapoints else 0,
+                      'UpTime': int(round(datapoints['UpTime']['Average'])) if 'UpTime' in datapoints else 0
+                  })
+                  return workspace_data
+              except Exception as e:
+                  logger.error(f"Error processing workspace {workspace.get('WorkspaceId', 'unknown')}: {str(e)}")
+                  return None
+
+          def store_data_to_s3(data, region, service, path, filename, accountID, payer_id):
+              if not data:
+                  logger.info("No data to store")
+                  return
+
+              local_file = f"/tmp/{region}-{filename}"
+              try:
+                  with open(local_file, 'w') as f:
+                      for item in data:
+                          f.write(json.dumps(item, default=str) + '\n')
+
+                  if os.path.getsize(local_file) == 0:
+                      logger.info(f"No data in file for {path}")
+                      return
+
+                  key = datetime.now().strftime(f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/accountid={accountID}/region={region}/year=%Y/month=%m/day=%d/{filename}")
+                  s3client = boto3.client('s3')
+                  logger.info(f"Uploading file {local_file} to {BUCKET}/{key}")
+
+                  S3Transfer(s3client).upload_file(
+                      local_file,
+                      BUCKET,
+                      key,
+                      extra_args={'ACL': 'bucket-owner-full-control'}
+                  )
+                  logger.info(f'Successfully uploaded {filename} to S3')
+
+              except Exception as e:
+                  logger.error(f"Error in store_data_to_s3 for {filename}: {str(e)}")
+                  raise
+              finally:
+                  try:
+                      if os.path.exists(local_file):
+                          os.remove(local_file)
+                  except Exception as e:
+                      logger.warning(f"Failed to remove temporary file {local_file}: {str(e)}")
+
+          def get_workspace_stats(cwclient, client, s3client, region, service, path, filename, accountID, payer_id):
+              try:
+                  paginator = client.get_paginator('describe_workspaces')
+                  end_time = datetime.utcnow()
+                  start_time = end_time - timedelta(hours=1)
+
+                  workspace_data_list = []
+                  failed_workspaces = []
+                  current_batch = []
+                  batch_counter = 0
+
+                  for page in paginator.paginate():
+                      for workspace in page['Workspaces']:
+                          try:
+                              workspace_data = process_single_workspace(workspace, cwclient, start_time, end_time)
+
+                              if workspace_data:
+                                  current_batch.append(workspace_data)
+                              else:
+                                  failed_workspaces.append(workspace.get('WorkspaceId', 'unknown'))
+
+                              # When batch size is reached, store the batch
+                              if len(current_batch) >= BATCH_SIZE:
+                                  try:
+                                      store_data_to_s3(
+                                          current_batch,
+                                          region,
+                                          service,
+                                          path,
+                                          f"workspaces_batch_{batch_counter}.json",
+                                          accountID,
+                                          payer_id
+                                      )
+                                      workspace_data_list.extend(current_batch)
+                                      current_batch = []
+                                      batch_counter += 1
+                                  except Exception as e:
+                                      logger.error(f"Error storing batch to S3: {str(e)}")
+                                      failed_workspaces.extend([w.get('WorkspaceId', 'unknown') for w in current_batch])
+                                      current_batch = []
+
+                          except Exception as e:
+                              logger.error(f"Error processing workspace {workspace.get('WorkspaceId', 'unknown')}: {str(e)}")
+                              failed_workspaces.append(workspace.get('WorkspaceId', 'unknown'))
+
+                  # Store any remaining workspaces in the final batch
+                  if current_batch:
+                      try:
+                          store_data_to_s3(
+                              current_batch,
+                              region,
+                              service,
+                              path,
+                              f"workspaces_batch_final.json",
+                              accountID,
+                              payer_id
+                          )
+                          workspace_data_list.extend(current_batch)
+                      except Exception as e:
+                          logger.error(f"Error storing final batch to S3: {str(e)}")
+                          failed_workspaces.extend([w.get('WorkspaceId', 'unknown') for w in current_batch])
+
+                  # Create and store processing summary
+                  total_processed = len(workspace_data_list)
+                  total_failed = len(failed_workspaces)
+
+                  logger.info(f"Processing complete for region {region}:")
+                  logger.info(f"Successfully processed: {total_processed} workspaces")
+                  logger.info(f"Failed to process: {total_failed} workspaces")
+
+                  if failed_workspaces:
+                      logger.warning(f"Failed WorkspaceIds: {', '.join(failed_workspaces)}")
+
+              except Exception as e:
+                  logger.error(f"Error in main workspace processing loop for region {region}: {str(e)}")
+                  raise
+
+          def assume_role(account_id, service, region):
+              partition = boto3.session.Session().get_partition_for_region(region_name=region)
+              role_arn = f"arn:{partition}:iam::{account_id}:role/{ROLE_NAME}"
+              cred = boto3.client('sts', region_name=region).assume_role(
+                  RoleArn=role_arn,
+                  RoleSessionName="data_collection"
+              )['Credentials']
+              return boto3.client(
+                  service,
+                  aws_access_key_id=cred['AccessKeyId'],
+                  aws_secret_access_key=cred['SecretAccessKey'],
+                  aws_session_token=cred['SessionToken'],
+                  region_name=region
+              )
+
+          def lambda_handler(event, context):
+              logger.info(f"Event: {event}")
+
+              # Check if we're using specific EUC accounts or processing from the event
+              if EUC_ACCOUNT_IDS and EUC_ACCOUNT_IDS.strip():
+                  # Process specific accounts provided in the environment variable
+                  euc_accounts = [account.strip() for account in EUC_ACCOUNT_IDS.split(',') if account.strip()]
+                  logger.info(f"Using specific EUC accounts: {euc_accounts}")
+                
+                  # Get the payer_id from the event if available, otherwise use a default
+                  payer_id = "unknown"
+                  if 'account' in event:
+                      try:
+                          account = json.loads(event["account"])
+                          payer_id = account.get("payer_id", "unknown")
+                      except:
+                          pass
+                  
+              # Process accounts in parallel with a thread pool
+                  with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(euc_accounts))) as executor:
+                      future_to_account = {
+                          executor.submit(process_account, account_id, payer_id): account_id 
+                          for account_id in euc_accounts
+                      }
+                
+                      for future in concurrent.futures.as_completed(future_to_account):
+                          account_id = future_to_account[future]
+                          try:
+                              future.result()
+                              logger.info(f"Successfully processed account {account_id}")
+                          except Exception as e:
+                              logger.error(f"Error processing account {account_id}: {str(e)}")
+        
+              elif 'account' in event:
+                  # Process the account from the event (original behavior)
+                  try:
+                      account = json.loads(event["account"])
+                      account_id = account["account_id"]
+                      payer_id = account["payer_id"]
+                      logger.info(f"Collecting data for account from event: {account_id}")
+                      process_account(account_id, payer_id)
+                  except Exception as e:
+                      logger.error(f"Error processing account from event: {str(e)}")
+                      raise
+              else:
+                  raise ValueError(
+                      "Please do not trigger this Lambda manually. "
+                      "Find the corresponding state machine in Step Functions and Trigger from there, "
+                      "or specify EUC_ACCOUNT_IDS environment variable."
+                  )
+              
+              return "Successful"
+
+          def process_account(account_id, payer_id):
+              """Process a single account to collect WorkSpaces metrics"""
+              s3client = boto3.client('s3')
+              for service in functions.keys():
+                  if functions[service]['regional']:
+                      for region in REGIONS:
+                          logger.info(f"Processing region {region}")
+                          client = assume_role(account_id, functions[service]['api'], region)
+                          for f in functions[service]['functions']:
+                              cw_client = assume_role(account_id, 'cloudwatch', region)
+                              try:
+                                  globals()[f['name']](
+                                      cw_client,
+                                      client,
+                                      s3client,
+                                      region,
+                                      service,
+                                      f['output_path'],
+                                      f['output_file_name'],
+                                      account_id,
+                                      payer_id
+                                  )
+                              except Exception as e:
+                                  logger.warning(e)
+                  else:
+                      client = boto3.client(service)
+                      for f in functions[service]['functions']:
+                          cw_client = boto3.client('cloudwatch', region_name='us-east-1')
+                          try:
+                              globals()[f['name']](
+                                  cw_client,
+                                  client,
+                                  s3client,
+                                  'us-east-1',
+                                  service,
+                                  f['output_path'],
+                                  f['output_file_name'],
+                                  account_id,
+                                  payer_id
+                              )
+                          except Exception as e:
+                              logger.warning(e)
+              return "Successful"
+
+      Handler: index.lambda_handler
+      MemorySize: 5376
+      Timeout: 300
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationBucket
+          PREFIX: !Ref CFDataName
+          ROLENAME: !Ref MultiAccountRoleName
+          REGIONS: !Ref RegionsInScope
+          ROLE_SESSION_NAME: data_collection
+          EUC_ACCOUNT_IDS: !Ref EUCAccountIDs
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${LambdaFunction}
+      RetentionInDays: 60
+
+  Crawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub ${ResourcePrefix}${CFDataName}-Crawler
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/
+
+  ModuleStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub ${ResourcePrefix}${CFDataName}-StateMachine
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
+        CollectionType: Payers
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+
+  ModuleRefreshSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Description: !Sub Scheduler for the ODC ${CFDataName} module
+      Name: !Sub ${ResourcePrefix}${CFDataName}-RefreshSchedule
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        MaximumWindowInMinutes: 30
+        Mode: FLEXIBLE
+      Target:
+        Arn: !GetAtt ModuleStepFunction.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
+
+  AnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName
+
+  AthenaQuery:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Database: !Ref DatabaseName
+      Description: Provides a cur extended with WorkSpaces Metrics info
+      Name: !Sub ${ResourcePrefix}view cur_with_org_data
+      QueryString: !Sub 
+        CREATE OR REPLACE VIEW "euc_cwmetrics_view" AS 
+          SELECT
+          "WorkspaceId" , "UserName" , "State" , "BundleId" , "DirectoryId" ,
+          "ComputerName" , "RunningMode" , "RootVolumeSizeGib" ,
+          "UserVolumeSizeGib" , "accountid" , "region" , "CPUUsage" ,
+          "MemoryUsage" , "InSessionLatency" , "UserVolumeDiskUsage" ,
+          "RootVolumeDiskUsage" , "UpTime" 
+        FROM
+          "inventory_workspaces_metrics_data"

@@ -56,8 +56,15 @@ Parameters:
     Description: ARN of a Lambda for Managing GlueTable
   AwsObjects:
     Type: CommaDelimitedList
-    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters, LambdaFunctions, RdsDbClusters
+    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters, LambdaFunctions, RdsDbClusters, WorkSpaces
     Description: Services for pulling price data
+  DataBucketsKmsKeysArns:
+    Type: String
+    Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
+    Default: ""
+
+Conditions:
+  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
 
 Mappings:
   ServicesMap:
@@ -1004,6 +1011,73 @@ Mappings:
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
           TableType: EXTERNAL_TABLE
 
+    WorkSpaces:
+      path: workspaces
+      table:
+        - Name: inventory_workspaces_data
+          Parameters:
+            classification: json
+            compressionType: none
+          PartitionKeys:
+            - Name: payer_id
+              Type: string
+            - Name: year
+              Type: string
+            - Name: month
+              Type: string
+            - Name: day
+              Type: string
+          StorageDescriptor:
+            Columns:
+              - Name: workspaceid
+                Type: string
+              - Name: username
+                Type: string
+              - Name: computetype
+                Type: string
+              - Name: directoryid
+                Type: string
+              - Name: directoryname
+                Type: string
+              - Name: directorytype
+                Type: string
+              - Name: directoryalias
+                Type: string 
+              - Name: directorymaintenance
+                Type: string
+              - Name: state
+                Type: string
+              - Name: connectionstatus
+                Type: string
+              - Name: lastconnected
+                Type: string
+              - Name: lastinventoryrun
+                Type: string
+              - Name: runningmode
+                Type: string
+              - Name: operatingsystem
+                Type: string
+              - Name: protocol
+                Type: string
+              - Name: computername
+                Type: string
+              - Name: ipaddress
+                Type: string
+              - Name: accountid
+                Type: string
+              - Name: collection_date
+                Type: string
+              - Name: region
+                Type: string
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-workspaces-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            SerdeInfo:
+              Parameters:
+                paths: WorkspaceId,UserName,ComputeType,DirectoryId,DirectoryName,DirectoryType,DirectoryAlias,DirectoryMaintenance,State,ConnectionStatus,LastConnected,LastInventoryRun,RunningMode,OperatingSystemName,Protocol,ComputerName,IPAddress,accountid,collection_date,region
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+          TableType: EXTERNAL_TABLE
+
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
@@ -1016,7 +1090,7 @@ Resources:
             Effect: Allow
             Principal:
               Service:
-                - lambda.amazonaws.com
+                - !Sub "lambda.${AWS::URLSuffix}"
         Version: 2012-10-17
       ManagedPolicyArns:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -1038,6 +1112,17 @@ Resources:
                   - "s3:PutObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
+        - !If 
+          - NeedDataBucketsKms
+          - PolicyName: "KMS"
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "kms:GenerateDataKey"
+                  Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+          - !Ref AWS::NoValue
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -1059,6 +1144,7 @@ Resources:
           import os
           import json
           import logging
+          import time
           from functools import partial, lru_cache
           from datetime import datetime, date, timezone
 
@@ -1142,8 +1228,9 @@ Resources:
                       )
                       .search("clusters")
                   ):
+                      # Get cluster details
                       cluster = client.describe_cluster(name=cluster_name)
-                      yield {
+                      cluster_data = {
                           "Arn": cluster["cluster"]["arn"],
                           "Name": cluster["cluster"]["name"],
                           "CreatedAt": datetime.strftime(
@@ -1151,9 +1238,93 @@ Resources:
                           ),
                           "Version": cluster["cluster"]["version"],
                       }
+                      # Get node groups for the cluster
+                      try:
+                          node_groups = client.list_nodegroups(clusterName=cluster_name).get("nodegroups", [])
+                          cluster_data["NodeGroups"] = []
+                          for node_group in node_groups:
+                              node_group_details = client.describe_nodegroup(clusterName=cluster_name, nodegroupName=node_group)
+                              cluster_data["NodeGroups"].append({
+                                  "NodeGroupName": node_group_details["nodegroup"].get("nodegroupName"),
+                                  "NodeRole": node_group_details["nodegroup"].get("nodeRole"),
+                                  "InstanceTypes": node_group_details["nodegroup"].get("instanceTypes",[]),
+                                  "ScalingConfig": node_group_details["nodegroup"].get("scalingConfig",{}),
+                                  "Subnets": node_group_details["nodegroup"].get("subnets",[]),
+                                  "Status": node_group_details["nodegroup"].get("status","Unknown"),
+                                  "AMIType": node_group_details["nodegroup"].get("amiType","Unknown"),
+                                  "Version": node_group_details["nodegroup"].get("version","Unknown"),
+                                  "CreatedAt": datetime.strftime(
+                                      node_group_details["nodegroup"]["createdAt"].astimezone(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"
+                                  ),
+                              })
+                      except Exception as ng_exc:  # Catch node group-specific issues
+                          logger.error(f"Error fetching node groups for {cluster_name} in {region}: {ng_exc}")
+                      yield cluster_data
               except Exception as exc: #pylint: disable=W0718
                   logger.error(f"Cannot get info from {account_id}/{region}: {type(exc)}-{exc}")
               return []
+
+          def workspaces_scan(account_id, region):
+              """Special function to scan AWS WorkSpaces resources"""
+              # Define WorkSpaces supported regions
+              WORKSPACES_REGIONS = [
+                  'us-east-1', 'us-west-2', 'ap-south-1', 'ap-northeast-2', 
+                  'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1', 'ca-central-1',
+                  'eu-central-1', 'eu-west-1', 'eu-west-2', 'sa-east-1']
+              # Skip if region is not supported by WorkSpaces
+              if region not in WORKSPACES_REGIONS:
+                  logger.info(f"WorkSpaces not supported in region {region}. Skipping.")
+                  return
+              try:
+                  session = assume_session(account_id, region)
+                  client = session.client('workspaces', region_name=region)
+                  # Get WorkSpaces data
+                  workspaces_data = list(client.get_paginator('describe_workspaces').paginate().search('Workspaces[*]'))
+                  if not workspaces_data:
+                    logger.info(f"No WorkSpaces found in {account_id}/{region}")
+                    return
+                  # Get connection status and directories for lookup
+                  connection_status = client.describe_workspaces_connection_status()['WorkspacesConnectionStatus']
+                  directories = client.describe_workspace_directories()['Directories']
+                  # Create lookup dictionaries
+                  connection_lookup = {conn['WorkspaceId']: conn for conn in connection_status}
+                  directory_lookup = {d['DirectoryId']: d for d in directories}
+                  # Process workspaces
+                  for workspace in workspaces_data:
+                    workspace_id = workspace['WorkspaceId']
+                    dir_id = workspace['DirectoryId']
+            
+                    connection_info = connection_lookup.get(workspace_id, {})
+                    dir_info = directory_lookup.get(dir_id, {})
+            
+                    workspace_info = {
+                        'accountid': account_id,
+                        'region': region,
+                        'ResourceType': 'WorkSpace',
+                        'WorkspaceId': workspace_id,
+                        'UserName': workspace['UserName'],
+                        'DirectoryId': dir_id,
+                        'State': workspace['State'],
+                        'ConnectionStatus': connection_info.get('ConnectionState', 'N/A'),
+                        'LastConnected': connection_info.get('LastKnownUserConnectionTimestamp', 'Never').strftime('%x %X') if isinstance(connection_info.get('LastKnownUserConnectionTimestamp'), datetime) else "01/01/01 00:00:00",
+                        'LastInventoryRun': time.strftime('%x %X'),
+                        'RunningMode': workspace.get("WorkspaceProperties", {}).get("RunningMode", "N/A"),
+                        'ComputeType': workspace.get("WorkspaceProperties", {}).get("ComputeTypeName", "N/A"),
+                        'OperatingSystem': workspace.get("WorkspaceProperties", {}).get("OperatingSystemName", "N/A"),
+                        'Protocol': ''.join(
+                            c for c in str(workspace.get("WorkspaceProperties", {}).get("Protocols", "N/A")) 
+                            if c.isalnum() or c.isspace()
+                        ),
+                        'DirectoryName': dir_info.get('DirectoryName', 'N/A'),
+                        'DirectoryAlias': dir_info.get('Alias', 'N/A'),
+                        'DirectoryType': dir_info.get('DirectoryType', 'N/A'),
+                        'DirectoryMaintenance': dir_info.get("WorkspaceCreationProperties", {}).get("EnableMaintenanceMode", "N/A"),
+                        'ComputerName': workspace.get("ComputerName", ""),
+                        'IPAddress': workspace.get("IpAddress", "")
+                    }            
+                    yield workspace_info
+              except Exception as exc:
+                  logger.error(f"Cannot get WorkSpaces info from {account_id}/{region}: {type(exc)}-{exc}")
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects ami, snapshots and volumes from linked accounts
@@ -1229,7 +1400,8 @@ Resources:
                     function_name='list_functions',
                     obj_name='Functions[*]'
                   ),
-                  'eks': eks_clusters_scan
+                  'eks': eks_clusters_scan,
+                  'workspaces': workspaces_scan
               }
 
               account = json.loads(event["account"])
@@ -1758,6 +1930,37 @@ Resources:
               gp3_gb_cost + gp3_iops_cost + gp3_throughput_cost AS gp3_total_cost,
               (current_gb_cost + current_iops_cost) - (gp3_gb_cost + gp3_iops_cost + gp3_throughput_cost) as gp3_saving
           FROM inventory_ebs_data
+  
+  EUCInventoryView:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Database: !Ref DatabaseName
+      Description: EUC Inventory View for WorkSpaces inventory data
+      Name: create_euc_inventory_view
+      QueryString: !Sub |
+        CREATE OR REPLACE VIEW "euc_inventory_view" AS
+          SELECT
+          "workspaceid"
+          , "username"
+          , "accountid"
+          , "computetype"
+          , "directoryid"
+          , "directoryname"
+          , "directoryalias"
+          , "directorytype"
+          , "directorymaintenance"
+          , "region"
+          , "state"
+          , "connectionstatus"
+          , CAST(parse_datetime(lastconnected, 'MM/dd/yy HH:mm:ss') AS timestamp) lastconnected
+          , "lastinventoryrun"
+          , "runningmode"
+          , "operatingsystem"
+          , "protocol"
+          , "computername"
+          , "ipaddress"
+          FROM
+            "inventory_workspaces_data"
 
   AthenaBackwardCompatPricingRegionNames:
     Type: AWS::Athena::NamedQuery
