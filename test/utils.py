@@ -235,6 +235,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeLicenseManagerModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeQuickSightModule',         'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeServiceQuotasModule',      'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeEUCUtilizationModule',     'ParameterValue': "yes"},
         ]
     )
 
