@@ -81,6 +81,9 @@ def test_ecs_chargeback_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."ecs_chargeback_data" LIMIT 10;')
     assert len(data) > 0, 'ecs_chargeback_data is empty'
 
+def test_inventory_workspaces_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_workspaces_data" LIMIT 10;')
+    assert len(data) > 0, 'inventory_workspaces_data is empty'
 
 def test_inventory_ami_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_ami_data" LIMIT 10;')
@@ -122,6 +125,9 @@ def test_trusted_advisor_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."trusted_advisor_data" LIMIT 10;')
     assert len(data) > 0, 'trusted_advisor_data is empty'
 
+def test_inventory_workspaces_metrics_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_workspaces_metrics_data" LIMIT 10;')
+    assert len(data) > 0, 'inventory_workspaces_metrics_data is empty'
 
 def test_transit_gateway_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."transit_gateway_data" LIMIT 10;')

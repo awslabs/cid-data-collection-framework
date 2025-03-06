@@ -35,7 +35,7 @@ Parameters:
     Description: Arn of lambda for Analytics
   AwsServices:
     Type: CommaDelimitedList
-    Default: AmazonRDS, AmazonEC2, AmazonElastiCache, AmazonES, AWSComputeSavingsPlan, AWSLambda, RegionalServices, RegionNames
+    Default: AmazonRDS, AmazonEC2, AmazonElastiCache, AmazonES, AWSComputeSavingsPlan, AWSLambda, RegionalServices, RegionNames, AmazonWorkSpaces
     Description: Services for pulling price data
   CodeBucket:
     Type: String
@@ -377,6 +377,43 @@ Mappings:
       - { Type: string, Name: 'region' }
       - { Type: string, Name: 'regionname' }
       jsonPaths: ['domain','geolocationCountry','geolocationRegion','longName','partition','region','regionname',"service"]
+
+    AmazonWorkSpaces:
+      path: workspaces
+      partition:
+      - { Name: region, Type: string }
+      fields:
+      - { Type: string, Name: "SKU" }
+      - { Type: string, Name: "OfferTermCode" }
+      - { Type: string, Name: "RateCode" }
+      - { Type: string, Name: "TermType" }
+      - { Type: string, Name: "PriceDescription" }
+      - { Type: string, Name: "EffectiveDate" }
+      - { Type: string, Name: "StartingRange" }
+      - { Type: string, Name: "EndingRange" }
+      - { Type: string, Name: "Unit" }
+      - { Type: string, Name: "PricePerUnit" }
+      - { Type: string, Name: "Currency" }
+      - { Type: string, Name: "Product Family" }
+      - { Type: string, Name: "serviceCode" }
+      - { Type: string, Name: "Location" }
+      - { Type: string, Name: "Location Type" }
+      - { Type: string, Name: "vCPU" }
+      - { Type: string, Name: "Memory" }
+      - { Type: string, Name: "Storage" }
+      - { Type: string, Name: "Operating System" }
+      - { Type: string, Name: "Group" }
+      - { Type: string, Name: "Group Description" }
+      - { Type: string, Name: "usageType" }
+      - { Type: string, Name: "operation" }
+      - { Type: string, Name: "Bundle" }
+      - { Type: string, Name: "License" }
+      - { Type: string, Name: "Region Code" }
+      - { Type: string, Name: "Resource Type" }
+      - { Type: string, Name: "Running Mode" }
+      - { Type: string, Name: "serviceName" }
+      - { Type: string, Name: "Software Included" }
+      jsonPaths: ["SKU","OfferTermCode","RateCode","TermType","PriceDescription","EffectiveDate","StartingRange","EndingRange","Unit","PricePerUnit","Currency","Product Family","serviceCode","Location","Location Type","vCPU","Memory","Storage","Operating System","Group","Group Description","usageType","operation","Bundle","License","Region Code","Resource Type","Running Mode","serviceName","Software Included"]
 
 Resources:
   LambdaRole:
