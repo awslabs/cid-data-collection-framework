@@ -380,7 +380,7 @@ Resources:
                           logger.info(f'Uploaded {count} summary records to s3://{BUCKET_NAME}/{key}')
                           # clear any previous runs for the same day
                           bucket = boto3.resource('s3').Bucket(BUCKET_NAME)
-                          bucket.objects.filter(Prefix=ingestion_time.strftime(f"{PREFIX}/{PREFIX}-detail-data/payer_id={account_id}/year=%Y/month=%m/day=%d"))
+                          bucket.objects.filter(Prefix=ingestion_time.strftime(f"{PREFIX}/{PREFIX}-detail-data/payer_id={account_id}/year=%Y/month=%m/day=%d")).delete()
                           sf = boto3.client('stepfunctions')
                           sf_input = {
                               "bucket": BUCKET_NAME,
