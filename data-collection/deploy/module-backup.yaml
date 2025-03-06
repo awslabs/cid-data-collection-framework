@@ -150,9 +150,11 @@ Resources:
 
           BUCKET = os.environ.get('BUCKET_NAME')
           ROLE_NAME = os.environ.get('ROLE_NAME')
-          PREFIX = os.environ.get('PREFIX')
+          MODULE = os.environ.get('MODULE')
           TMP_FILE = "/tmp/data.json"
           START_TIME = str(datetime.now().isoformat())
+          DC_REGION = boto3.session.Session().region_name
+          DC_ACCOUNT = boto3.client('sts').get_caller_identity()['Account']
 
           logger = logging.getLogger()
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -209,10 +211,10 @@ Resources:
               and must be called from the corresponding Step Function to orchestrate
               """
               logger.info(f"Event data: {event}")
-              sub_uuid = [context.aws_request_id, context.log_group_name, context.log_stream_name]
+              sub_uuid = {"lambda-request-id": context.aws_request_id, "lambda-log-group": context.log_group_name, "lambda-log-stream": context.log_stream_name}
               count = 0
               region = "us-east-1" #FIXME: what about other regions?
-              run_uuid = event.get("run_uuid", str(uuid.uuid4()))
+              main_exe_uuid = event.get("main_exe_uuid", str(uuid.uuid4()))
 
               try:
                   account = json.loads(event.get("account","{}"))
@@ -235,7 +237,7 @@ Resources:
                       aws_secret_access_key=creds['SecretAccessKey'],
                       aws_session_token=creds['SessionToken'],
                   )
-                  s3_prefix = f'{PREFIX}/{PREFIX}-{name}-data/payer_id={payer_id}'
+                  s3_prefix = f'{MODULE}/{MODULE}-{name}-data/payer_id={payer_id}'
                   start_date = last_updated_date(s3_prefix)
                   end_date = datetime.now().date()
                   data_iterator = iterate_paginated_results(
@@ -252,35 +254,26 @@ Resources:
                   count, location = store_to_s3(flatten_data_iterator, s3_prefix)
                   description = f"Searched range from {start_date} to {end_date}"
                   return create_log_entry(payer_id=payer_id, account_id=account_id, region=region, params=name, record_count=count, location=location,
-                                          description=description, run_uuid=run_uuid, sub_uuid=sub_uuid, record_context=f"{PREFIX} {name}")
+                                          main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, description=description)
 
               except Exception as exc: #pylint: disable=broad-exception-caught
                   is_not_activated = 'Insufficient privileges to perform this action.' in str(exc)
                   status_code = STATUS_FORBIDDEN if is_not_activated else None
                   description = None if not is_not_activated else ('You need to activate cross account jobs monitoring. '
                                                                   'See https://docs.aws.amazon.com/aws-backup/latest/devguide/manage-cross-account.html#enable-cross-account')
-                  return create_log_entry(payer_id=payer_id, account_id=account_id, region=region, params=name,
-                                          status_code=status_code, description=description, record_count=count, error=exc, run_uuid=run_uuid, sub_uuid=sub_uuid)
+                  create_log_entry(payer_id=payer_id, account_id=account_id, region=region, params=name, record_count=count,
+                                  main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, description=description, status_code=status_code, error=exc)
+                  raise exc
 
-          def create_log_entry(payer_id="", account_id=None, start_time=None, status_code=None, region="", module=None, module_function="module-lambda", sub_code="",
-                              params="", record_count=0, record_context="", description=None, location="", error=None, run_uuid="", sub_uuid=[], is_summary=False, store_it=True): # pylint: disable=too-many-locals
+          def create_log_entry(payer_id="", account_id=None, status_code=None, region="", module_function="data-collection-lambda", sub_code="",
+                              params="", record_count=0, description=None, location="", error=None, main_exe_uuid="", sub_uuid={}, is_summary=False, store_it=True): # pylint: disable=too-many-locals
               """Format log entry for logging."""
-              try:
-                  # get the local account and region
-                  dc_region = boto3.session.Session().region_name
-                  dc_account_id = boto3.client('sts').get_caller_identity()['Account']
-              except Exception as exc: #pylint: disable=broad-exception-caught
-                  dc_region = ""
-                  dc_account_id = ""
-                  logger.error(f"{type(exc).__name__}: When trying to obtain local region and account information. Message: {str(exc)}")
-
-              status_code, description = status_handler(error, record_count, is_summary, status_code, description, record_context)
+              status_code, description = status_handler(error, record_count, is_summary, status_code, description)
               log_entry = {
-                  "StartTime": start_time if start_time else START_TIME,
-                  "EndTime":  str(datetime.now().isoformat()),
-                  "DataCollectionRegion": dc_region,
-                  "DataCollectionAccountId": dc_account_id,
-                  "Module": module if module else PREFIX,
+                  "Timestamp": str(datetime.now().isoformat()),
+                  "DataCollectionRegion": DC_REGION,
+                  "DataCollectionAccountId": DC_ACCOUNT,
+                  "Module": MODULE,
                   "ModuleFunction": module_function,
                   "Params": params,
                   "PayerId": payer_id,
@@ -291,8 +284,8 @@ Resources:
                   "RecordCount": record_count,
                   "Description": description,
                   "DataLocation": location if record_count > 0 else "",
-                  "RunUUID": run_uuid,
-                  "SubUUID": sub_uuid if isinstance(sub_uuid, list) else [sub_uuid],
+                  "MainExeUuid": main_exe_uuid,
+                  "SubUuid": sub_uuid,
                   "Service": "Lambda"
               }
               if status_code >= 400:
@@ -302,7 +295,7 @@ Resources:
               logger.info(f"Result: {log_entry}")
               return {"statusCode": status_code, "logEntry": log_entry}
 
-          def status_handler(error=None, record_count=0, is_summary=False, status_code=None, description="", record_context=""):
+          def status_handler(error=None, record_count=0, is_summary=False, status_code=None, description=""):
               """Codify status codes and descriptions for consistent logging."""
               if status_code:
                   return status_code, description
@@ -317,7 +310,7 @@ Resources:
                       return STATUS_FORBIDDEN, f'{type(error).__name__}: Region might not be activated.'
                   return STATUS_SERVER_ERROR, f"{type(error).__name__}: with message {exc_msg}"
               # For all others, assume success
-              description = f"Lambda execution successful: {record_count} {(record_context+' ') if record_context else ''}record{'s' if (record_count > 1 or record_count == 0) else ''} found.{' '+description if description else ''}"
+              description = f"Execution successful: {record_count} record{'s' if (record_count > 1 or record_count == 0) else ''} found.{' '+description if description else ''}"
               if is_summary:
                   return STATUS_MULTI_STATUS, "Multi-part "+description
               if record_count == 0:
@@ -326,7 +319,7 @@ Resources:
 
           def store_log_entry(log_entry):
               """Store the log entry to S3."""
-              key = datetime.now().strftime(f"logs/%Y/%m/%d/{PREFIX}-{uuid.uuid4()}.json")
+              key = datetime.now().strftime(f"logs/modules/%Y/%m/%d/{MODULE}-{uuid.uuid4()}.json")
               try:
                   boto3.client('s3').put_object(Body=json.dumps(log_entry), Bucket=BUCKET, Key=key)
               except Exception as exc: #pylint: disable=broad-exception-caught
@@ -350,7 +343,7 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
-          PREFIX: !Ref CFDataName
+          MODULE: !Ref CFDataName
           ROLE_NAME: !Ref ManagementRoleName
     Metadata:
       cfn_nag:

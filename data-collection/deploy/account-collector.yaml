@@ -130,31 +130,32 @@ Resources:
 
             import boto3
 
+            BUCKET = os.environ.get("BUCKET_NAME")
             ROLE_NAME = os.environ.get('ROLE_NAME')
-            RESOURCE_PREFIX = os.environ.get('RESOURCE_PREFIX')
-            MANAGEMENT_ACCOUNT_IDS = os.environ.get('MANAGEMENT_ACCOUNT_IDS')
-            BUCKET = os.environ.get('BUCKET_NAME')
-            ROLE_NAME = os.environ.get('ROLE_NAME')
-            RESOURCE_PREFIX = os.environ.get('RESOURCE_PREFIX')
-            MANAGEMENT_ACCOUNT_IDS = os.environ.get('MANAGEMENT_ACCOUNT_IDS')
-            BUCKET = os.environ.get('BUCKET_NAME')
-            PREDEF_ACCOUNT_LIST_KEY = os.environ.get('PREDEF_ACCOUNT_LIST_KEY')
-            LINKED_ACCOUNT_LIST_KEY = os.environ.get('LINKED_ACCOUNT_LIST_KEY')
-            PAYER_ACCOUNT_LIST_KEY = os.environ.get('PAYER_ACCOUNT_LIST_KEY')
-            EXCLUDED_ACCOUNT_LIST_KEY = os.environ.get('EXCLUDED_ACCOUNT_LIST_KEY')
+            PREFIX = os.environ.get("PREFIX")
             TMP_FILE = "/tmp/data.json"
-            PREFIX = "account-collector"
             START_TIME = str(datetime.now().isoformat())
+            DC_REGION = boto3.session.Session().region_name
+            DC_ACCOUNT = boto3.client('sts').get_caller_identity()['Account']
+
+            MANAGEMENT_ACCOUNT_IDS = os.environ.get('MANAGEMENT_ACCOUNT_IDS')
+            PREDEF_ACCOUNT_LIST_KEY = os.environ.get('PREDEF_ACCOUNT_LIST_KEY', 'account-list/account-list')
+            LINKED_ACCOUNT_LIST_KEY = os.environ.get('LINKED_ACCOUNT_LIST_KEY', 'linked-account-list.json')
+            PAYER_ACCOUNT_LIST_KEY = os.environ.get('PAYER_ACCOUNT_LIST_KEY', 'payer-account-list.json')
+            EXCLUDED_ACCOUNT_LIST_KEY = os.environ.get('EXCLUDED_ACCOUNT_LIST_KEY', 'excluded-linked-account-list.csv')
+
+            MODULE = ""
 
             logger = logging.getLogger(__name__)
             logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
             def lambda_handler(event, context): #pylint: disable=unused-argument
+                global MODULE
                 logger.info(f"Incoming event: {event}")
-                sub_uuid = [context.aws_request_id, context.log_group_name, context.log_stream_name]
+                sub_uuid = {"lambda-request-id": context.aws_request_id, "lambda-log-group": context.log_group_name, "lambda-log-stream": context.log_stream_name}
                 account_type = event.get("Type", '').lower()
-                module = event.get("Module", '').lower()
-                run_uuid = event.get("RunUUID", str(uuid.uuid4()))
+                MODULE = event.get("Module", '').lower()
+                main_exe_uuid = event.get("MainExeUuid", str(uuid.uuid4()))
                 params = event.get("Params", "")
                 try:
                     # need to confirm that the Lambda concurrency limit is sufficient to avoid throttling
@@ -180,7 +181,13 @@ Resources:
                         count = 0
                         f.write("[\n")
                         for account in account_iterator():
-                            account['run_uuid'] = run_uuid
+                            account['main_exe_uuid'] = main_exe_uuid
+                            account['module'] = MODULE
+                            account['bucket'] = BUCKET
+                            account['dc_account'] = DC_ACCOUNT
+                            account['dc_region'] = DC_REGION
+                            account['params'] = params
+                            account['prefix'] = PREFIX
                             if count > 0:
                                 f.write(",\n")
                             f.write(json.dumps(account))
@@ -190,12 +197,12 @@ Resources:
                     if count == 0:
                         raise Exception(STATUS_NOT_FOUND) #pylint: disable=broad-exception-raised
 
-                    key = f"{PREFIX}/{module+'-'+(params+'-' if params else '')+(LINKED_ACCOUNT_LIST_KEY if account_type == 'linked' else PAYER_ACCOUNT_LIST_KEY)}"
+                    key = f"account-collector/{MODULE+'-'+(params+'-' if params else '')+(LINKED_ACCOUNT_LIST_KEY if account_type == 'linked' else PAYER_ACCOUNT_LIST_KEY)}"
                     s3 = boto3.client('s3')
                     s3.upload_file(TMP_FILE, Bucket=BUCKET, Key=key)
                     location = f"s3://{BUCKET}/{key}"
-                    log_entry = create_log_entry(module=module, module_function=PREFIX+'-lambda', params=params, region="us-east-1", record_count=count,
-                                                location=location, run_uuid=run_uuid, record_context="account", sub_uuid=sub_uuid)
+                    log_entry = create_log_entry(module_function='account-collector-lambda', params=params, region="us-east-1", record_count=count,
+                                                location=location, main_exe_uuid=main_exe_uuid, record_context="account", sub_uuid=sub_uuid)
                     return {'statusCode': 200, 'accountList': key, 'bucket': BUCKET, 'logEntry': log_entry['logEntry']}
                 except Exception as exc: #pylint: disable=broad-exception-caught
                     exc_msg = str(exc)
@@ -213,7 +220,7 @@ Resources:
                     else:
                         status_code = None
                         description = None
-                    create_log_entry(module=module, module_function=PREFIX+'-lambda', region="us-east-1", status_code=status_code, description=description, error=exc, run_uuid=run_uuid, sub_uuid=sub_uuid)
+                    create_log_entry(module_function='account-collector-lambda', params=params, region="us-east-1", status_code=status_code, description=description, error=exc, main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid)
                     raise exc
 
             def get_all_payers():
@@ -225,12 +232,12 @@ Resources:
                 for payer_id in get_all_payers():
                     account_id = payer_id # default
                     if service:
-                        ssm_key = f'/cid/{RESOURCE_PREFIX}config/delegated-admin/{service}/{payer_id}'
+                        ssm_key = f'/cid/{PREFIX}config/delegated-admin/{service}/{payer_id}'
                         try:
                             account_id = ssm.get_parameter(Name=ssm_key)['Parameter']['Value']
                         except ssm.exceptions.ParameterNotFound:
                             logger.warning(f'Not found ssm parameter {ssm_key}. Will use Management Account Id {payer_id}')
-                    yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id}), "runuuid": ""}
+                    yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id}), "main_exe_uuid": ""}
 
             def iterate_linked_accounts():
                 defined_accounts, ext = get_defined_list(BUCKET, PREDEF_ACCOUNT_LIST_KEY)
@@ -307,25 +314,15 @@ Resources:
                     aws_session_token=credentials['SessionToken'],
                 )
 
-            def create_log_entry(payer_id="", account_id=None, start_time=None, status_code=None, region="", module=None, module_function="module-lambda", sub_code="",
-                                params="", record_count=0, record_context="", description=None, location="", error=None, run_uuid="", sub_uuid=[], is_summary=False, store_it=True): # pylint: disable=too-many-locals
+            def create_log_entry(payer_id="", account_id=None, status_code=None, region="", module_function="data-collection-lambda", sub_code="",
+                                params="", record_count=0, record_context="", description=None, location="", error=None, main_exe_uuid="", sub_uuid={}, is_summary=False, store_it=True): # pylint: disable=too-many-locals
                 """Format log entry for logging."""
-                try:
-                    # get the local account and region
-                    dc_region = boto3.session.Session().region_name
-                    dc_account_id = boto3.client('sts').get_caller_identity()['Account']
-                except Exception as exc: #pylint: disable=broad-exception-caught
-                    dc_region = ""
-                    dc_account_id = ""
-                    logger.error(f"{type(exc).__name__}: When trying to obtain local region and account information. Message: {str(exc)}")
-
                 status_code, description = status_handler(error, record_count, is_summary, status_code, description, record_context)
                 log_entry = {
-                    "StartTime": start_time if start_time else START_TIME,
-                    "EndTime":  str(datetime.now().isoformat()),
-                    "DataCollectionRegion": dc_region,
-                    "DataCollectionAccountId": dc_account_id,
-                    "Module": module if module else PREFIX,
+                    "Timestamp": str(datetime.now().isoformat()),
+                    "DataCollectionRegion": DC_REGION,
+                    "DataCollectionAccountId": DC_ACCOUNT,
+                    "Module": MODULE,
                     "ModuleFunction": module_function,
                     "Params": params,
                     "PayerId": payer_id,
@@ -336,8 +333,8 @@ Resources:
                     "RecordCount": record_count,
                     "Description": description,
                     "DataLocation": location if record_count > 0 else "",
-                    "RunUUID": run_uuid,
-                    "SubUUID": sub_uuid if isinstance(sub_uuid, list) else [sub_uuid],
+                    "MainExeUuid": main_exe_uuid,
+                    "SubUuid": sub_uuid,
                     "Service": "Lambda"
                 }
                 if status_code >= 400:
@@ -371,7 +368,7 @@ Resources:
 
             def store_log_entry(log_entry):
                 """Store the log entry to S3."""
-                key = datetime.now().strftime(f"logs/%Y/%m/%d/{PREFIX}-{uuid.uuid4()}.json")
+                key = datetime.now().strftime(f"logs/modules/%Y/%m/%d/{PREFIX}-{uuid.uuid4()}.json")
                 try:
                     boto3.client('s3').put_object(Body=json.dumps(log_entry), Bucket=BUCKET, Key=key)
                 except Exception as exc: #pylint: disable=broad-exception-caught
@@ -396,12 +393,13 @@ Resources:
         Variables:
           ROLE_NAME: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
-          RESOURCE_PREFIX: !Ref ResourcePrefix
-          BUCKET_NAME: !Ref DestinationBucket
+          PREFIX: !Ref ResourcePrefix
+          BUCKET: !Ref DestinationBucket
           PREDEF_ACCOUNT_LIST_KEY: "account-list/account-list"
           LINKED_ACCOUNT_LIST_KEY: "linked-account-list.json"
           PAYER_ACCOUNT_LIST_KEY: "payer-account-list.json"
           EXCLUDED_ACCOUNT_LIST_KEY: "excluded-linked-account-list.csv"
+          DC_ACCOUNT: !Ref AWS::AccountId
     Metadata:
       cfn_nag:
         rules_to_suppress:
