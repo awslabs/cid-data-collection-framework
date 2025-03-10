@@ -55,6 +55,9 @@ Parameters:
     Type: String
     Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
     Default: ""
+  LambdaManageGlueTableARN:
+    Type: String
+    Description: ARN of a Lambda for Managing GlueTable
 
 Conditions:
   NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
@@ -304,6 +307,57 @@ Resources:
       Targets:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/organization-data/" #Preserve legacy name in Athena
+
+  ModuleGlueTable:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: organization_data
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+        - Name: payer_id
+          Type: string
+        StorageDescriptor:
+          Columns:
+          - Name: id
+            Type: string
+          - Name: arn
+            Type: string
+          - Name: email
+            Type: string
+          - Name: name
+            Type: string
+          - Name: status
+            Type: string
+          - Name: joinedmethod
+            Type: string
+          - Name: joinedtimestamp
+            Type: string
+          - Name: hierarchy
+            Type: array<struct<Id:string,Type:string,Name:string>>
+          - Name: hierarchypath
+            Type: string
+          - Name: hierarchytags
+            Type: array<struct<Key:string,Value:string>>
+          - Name: managementaccountid
+            Type: string
+          - Name: parent
+            Type: string
+          - Name: parentid
+            Type: string
+          - Name: parenttags
+            Type: array<struct<Key:string,Value:string>>
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/organization-data/"
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: Arn,Email,Hierarchy,HierarchyPath,HierarchyTags,Id,JoinedMethod,JoinedTimestamp,ManagementAccountId,Name,Parent,ParentId,ParentTags,Status
+        Parameters:
+          UPDATED_BY_CRAWLER: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
