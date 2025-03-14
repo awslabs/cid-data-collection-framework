@@ -337,7 +337,6 @@ Resources:
           # Actions that support resource-level permissions
           - Effect: "Allow"
             Action:
-                                  
               - "ecs:DescribeServices"
             Resource: !Sub "arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:service/*"
           # Actions that don't support resource-level permissions
