@@ -279,7 +279,8 @@ Resources:
               # merge with details and affected entities
               event_details_per_affected = []
               if len(affected_entities) == 0:
-                  event = {**event, **details[0]}
+                  detail = details[0] if len(details) > 0 else {}
+                  event = {**event, **detail}
                   event_details_per_affected.append(event)
               for affected_entity in affected_entities:
                   account = affected_entity['awsAccountId']
