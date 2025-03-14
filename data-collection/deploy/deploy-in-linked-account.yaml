@@ -407,7 +407,6 @@ Resources:
           # CloudWatch metrics for WorkSpaces
           - Effect: "Allow"
             Action:
-                                     
               - "cloudwatch:GetMetricStatistics"
             Resource: !Sub "arn:${AWS::Partition}:cloudwatch:*:${AWS::AccountId}:*"
             Condition:
