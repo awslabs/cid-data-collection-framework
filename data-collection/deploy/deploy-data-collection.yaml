@@ -45,7 +45,7 @@ Metadata:
       - Label:
           default: 'EUC Module Settings'
         Parameters:
-          - EUCAccountIDs        
+          - EUCAccountIDs
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket prefix'
@@ -128,10 +128,10 @@ Mappings:
     us-west-1:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-west-1 }
     us-west-2:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-west-2 }
   StepFunctionCode:
-    main-v4-3:      {TemplatePath: cfn/data-collection/source/step-functions/main-state-machine-v4-3.json}
-    crawler-v2:     {TemplatePath: cfn/data-collection/source/step-functions/crawler-state-machine-v2.json}
-    standalone-v2:  {TemplatePath: cfn/data-collection/source/step-functions/standalone-state-machine-v2.json}
-    he-detail-v2:   {TemplatePath: cfn/data-collection/source/step-functions/health-detail-state-machine-v2.json}
+    main-state-machine-v4:           {TemplatePath: cfn/data-collection/source/step-functions/main-state-machine-v4.json}
+    crawler-v2:                      {TemplatePath: cfn/data-collection/source/step-functions/crawler-state-machine-v2.json}
+    standalone-v2:                   {TemplatePath: cfn/data-collection/source/step-functions/standalone-state-machine-v2.json}
+    health-detail-state-machine-v2-1:  {TemplatePath: cfn/data-collection/source/step-functions/health-detail-state-machine-v2-1.json}
 
 Parameters:
   DestinationBucket:
@@ -968,7 +968,7 @@ Resources:
         Name: dc_execution_log
         TableType: EXTERNAL_TABLE
         PartitionKeys:
-        - { Name: datehour,    Type: string }
+        - { Name: logdate,    Type: string }
         StorageDescriptor:
           Columns:
           - { Name: timestamp,                   Type: timestamp }
@@ -998,13 +998,13 @@ Resources:
               serialization.format: '1'
         Parameters:
           EXTERNAL: 'TRUE'
-          projection.datehour.format: yyyy/MM/dd
-          projection.datehour.interval: '1'
-          projection.datehour.interval.unit: DAYS
-          projection.datehour.range: 2025/01/01,NOW
-          projection.datehour.type: date
+          projection.logdate.format: yyyy/MM/dd
+          projection.logdate.interval: '1'
+          projection.logdate.interval.unit: DAYS
+          projection.logdate.range: 2025/01/01,NOW
+          projection.logdate.type: date
           projection.enabled: 'true'
-          storage.location.template: !Sub "s3://${DestinationBucket}${AWS::AccountId}/logs/${!datehour}"
+          storage.location.template: !Sub "s3://${DestinationBucket}${AWS::AccountId}/logs/modules/${!logdate}"
 
   TrustedAdvisorModule:
     Type: AWS::CloudFormation::Stack
@@ -1023,7 +1023,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1044,7 +1044,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1065,7 +1065,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         LambdaManageGlueTableARN: !GetAtt LambdaManageGlueTable.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
@@ -1087,7 +1087,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1108,7 +1108,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1129,7 +1129,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         LambdaManageGlueTableARN: !GetAtt LambdaManageGlueTable.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
@@ -1183,7 +1183,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1204,7 +1204,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:
@@ -1230,7 +1230,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:
@@ -1256,34 +1256,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
-        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
-        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        EUCAccountIDs: !Ref EUCAccountIDs
-        RegionsInScope:
-          Fn::If:
-            - RegionsInScopeIsEmpty
-            - !Sub "${AWS::Region}"
-            - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
-
-  EUCUsageModule:
-    Type: AWS::CloudFormation::Stack
-    Condition: DeployEUCUtilizationModule
-    Properties:
-      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-workspaces-metrics.yaml"
-      Parameters:
-        DatabaseName: !Ref DatabaseName
-        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
-        DestinationBucket: !Ref S3Bucket
-        DestinationBucketARN: !GetAtt S3Bucket.Arn
-        GlueRoleARN: !GetAtt GlueRole.Arn
-        MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
-        Schedule: !Ref Schedule
-        ResourcePrefix: !Ref ResourcePrefix
-        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         EUCAccountIDs: !Ref EUCAccountIDs
@@ -1310,7 +1283,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1331,7 +1304,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1352,7 +1325,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:
@@ -1397,10 +1370,10 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        DetailStepFunctionTemplate: !FindInMap [StepFunctionCode, he-detail-v2, TemplatePath]
+        DetailStepFunctionTemplate: !FindInMap [StepFunctionCode, health-detail-state-machine-v2-1, TemplatePath]
 
   LicenseManagerModule:
     Type: AWS::CloudFormation::Stack
@@ -1419,7 +1392,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1440,7 +1413,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v4-3, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:

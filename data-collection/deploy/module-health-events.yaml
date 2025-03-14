@@ -409,7 +409,7 @@ Resources:
                           boto3.client('s3').upload_file(TMP_FILE, BUCKET, key)
                           # clear any previous runs for the same day
                           bucket = boto3.resource('s3').Bucket(BUCKET)
-                          bucket.objects.filter(Prefix=ingestion_time.strftime(f"{MODULE}/{MODULE}-detail-data/payer_id={account_id}/year=%Y/month=%m/day=%d"))
+                          bucket.objects.filter(Prefix=ingestion_time.strftime(f"{MODULE}/{MODULE}-detail-data/payer_id={account_id}/year=%Y/month=%m/day=%d")).delete()
                           sf = boto3.client('stepfunctions')
                           sf_input = {
                               "bucket": BUCKET,
