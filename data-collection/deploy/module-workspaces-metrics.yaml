@@ -1,6 +1,5 @@
-# CID Module - WorkSpaces CloudWatch Metrics
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Retrieves Inventory data for the chosen service
+Description: Retrieves CloudWatch metrics for WorkSpaces
 Transform: AWS::LanguageExtensions
 Parameters:
   DatabaseName:
@@ -9,7 +8,7 @@ Parameters:
     Default: optimization_data
   DataBucketsKmsKeysArns:
     Type: String
-    Description: KMS Key ARNs used for encrypting data in S3 buckets (comma separated)    
+    Description: KMS Key ARNs used for encrypting data in S3 buckets (comma separated)
   DestinationBucket:
     Type: String
     Description: Name of the S3 Bucket to be created to hold data information
@@ -69,10 +68,7 @@ Outputs:
     Value: !GetAtt ModuleStepFunction.Arn
 
 Conditions:
-  NeedDataBucketsKms: !Not
-    - !Equals
-      - !Ref DataBucketsKmsKeysArns
-      - ''
+  NeedDataBucketsKms: !Not[!Equals[!Ref DataBucketsKmsKeysArns, '']]
 
 Resources:
   WorkSpacesMetricsTable:
@@ -81,7 +77,7 @@ Resources:
       CatalogId: !Ref AWS::AccountId
       DatabaseName: !Ref DatabaseName
       TableInput:
-        Name: inventory_workspaces_metrics_data
+        Name: workspaces_metrics_data
         StorageDescriptor:
           Columns:
             - Name: WorkspaceId
@@ -127,7 +123,7 @@ Resources:
             - Name: UpTime
               Type: int
           InputFormat: org.apache.hadoop.mapred.TextInputFormat
-          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/workspaces-metrics-data/"
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
           OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
           SerdeInfo:
             SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
@@ -286,11 +282,11 @@ Resources:
                   output["UserVolumeSizeGib"] = props.get("UserVolumeSizeGib", 0)
                   output["ComputeTypeName"] = props.get("ComputeTypeName", "")
                   output["OperatingSystemName"] = props.get("OperatingSystemName", "")
-                  
+
                   # Handle the Protocols array
                   if "Protocols" in props:
                       output["Protocols"] = ",".join(props.get("Protocols", []))
-          
+
               tags = {}
               filtered_tags = {}
               if "Tags" in workspace:
@@ -491,7 +487,7 @@ Resources:
                   # Process specific accounts provided in the environment variable
                   euc_accounts = [account.strip() for account in EUC_ACCOUNT_IDS.split(',') if account.strip()]
                   logger.info(f"Using specific EUC accounts: {euc_accounts}")
-                
+
                   # Get the payer_id from the event if available, otherwise use a default
                   payer_id = "unknown"
                   if 'account' in event:
@@ -500,14 +496,13 @@ Resources:
                           payer_id = account.get("payer_id", "unknown")
                       except:
                           pass
-                  
-              # Process accounts in parallel with a thread pool
+
+                  # Process accounts in parallel with a thread pool
                   with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(euc_accounts))) as executor:
                       future_to_account = {
-                          executor.submit(process_account, account_id, payer_id): account_id 
+                          executor.submit(process_account, account_id, payer_id): account_id
                           for account_id in euc_accounts
                       }
-                
                       for future in concurrent.futures.as_completed(future_to_account):
                           account_id = future_to_account[future]
                           try:
@@ -515,7 +510,6 @@ Resources:
                               logger.info(f"Successfully processed account {account_id}")
                           except Exception as e:
                               logger.error(f"Error processing account {account_id}: {str(e)}")
-        
               elif 'account' in event:
                   # Process the account from the event (original behavior)
                   try:
@@ -533,7 +527,6 @@ Resources:
                       "Find the corresponding state machine in Step Functions and Trigger from there, "
                       "or specify EUC_ACCOUNT_IDS environment variable."
                   )
-              
               return "Successful"
 
           def process_account(account_id, payer_id):
@@ -653,15 +646,15 @@ Resources:
     Type: AWS::Athena::NamedQuery
     Properties:
       Database: !Ref DatabaseName
-      Description: Provides a cur extended with WorkSpaces Metrics info
-      Name: !Sub ${ResourcePrefix}view cur_with_org_data
-      QueryString: !Sub 
-        CREATE OR REPLACE VIEW "euc_cwmetrics_view" AS 
+      Description: Provides WorkSpaces Metrics info
+      Name: !Sub ${ResourcePrefix}view euc_cwmetrics_view
+      QueryString: !Sub
+        CREATE OR REPLACE VIEW "euc_cwmetrics_view" AS
           SELECT
           "WorkspaceId" , "UserName" , "State" , "BundleId" , "DirectoryId" ,
           "ComputerName" , "RunningMode" , "RootVolumeSizeGib" ,
           "UserVolumeSizeGib" , "accountid" , "region" , "CPUUsage" ,
           "MemoryUsage" , "InSessionLatency" , "UserVolumeDiskUsage" ,
-          "RootVolumeDiskUsage" , "UpTime" 
+          "RootVolumeDiskUsage" , "UpTime"
         FROM
-          "inventory_workspaces_metrics_data"
+          "workspaces_metrics_data"
