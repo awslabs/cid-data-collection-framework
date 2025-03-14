@@ -371,7 +371,6 @@ Resources:
           # CloudWatch metrics for RDS
           - Effect: "Allow"
             Action:
-                                     
               - "cloudwatch:GetMetricStatistics"
             Resource: !Sub "arn:${AWS::Partition}:cloudwatch:*:${AWS::AccountId}:*"
             Condition:
