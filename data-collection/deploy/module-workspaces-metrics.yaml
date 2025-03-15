@@ -68,7 +68,7 @@ Outputs:
     Value: !GetAtt ModuleStepFunction.Arn
 
 Conditions:
-  NeedDataBucketsKms: !Not[!Equals[!Ref DataBucketsKmsKeysArns, '']]
+  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, '' ] ]
 
 Resources:
   WorkSpacesMetricsTable:

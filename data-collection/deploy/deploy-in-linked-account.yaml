@@ -207,9 +207,6 @@ Resources:
               - "support:DescribeCases"
               - "support:DescribeCommunications"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
-            #Condition:
-            #  StringEquals:
-            #    "aws:AccountId": !Sub "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -323,9 +320,6 @@ Resources:
               - "ecs:ListClusters"
               - "ec2:DescribeRegions"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
-            Condition:
-              StringEquals:
-                "aws:AccountId": !Sub "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -353,9 +347,9 @@ Resources:
               - "ec2:DescribeRegions"
               - "cloudwatch:GetMetricStatistics"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
-            Condition:
-              StringEquals:
-                "aws:AccountId": !Sub "${AWS::AccountId}"
+            #Condition:
+            #  StringEquals:
+            #    "aws:AccountId": !Sub "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -363,7 +357,7 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-  # EUC Utilization policy - Split into resource-specific and global permissions
+  # EUC Utilization policy
   EUCUtilizationPolicy:
     Type: 'AWS::IAM::Policy'
     Condition: IncludeEUCUtilizationModulePolicy
@@ -377,12 +371,15 @@ Resources:
             Action:
               - "workspaces:DescribeWorkspaces"
               - "ec2:DescribeRegions"
+            Resource: "*" # Wildcard required as actions do not support resource-level permissions
+          - Effect: "Allow"
+            Action:
               - "cloudwatch:GetMetricStatistics"
               - "cloudwatch:ListMetrics"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
             Condition:
               StringEquals:
-                "aws:AccountId": !Sub "${AWS::AccountId}"
+                cloudwatch:namespace: AWS/WorkSpaces
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -390,7 +387,7 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-  # Transit Gateway policy - Split into resource-specific and global permissions
+  # Transit Gateway policy
   TransitGatewayPolicy:
     Type: 'AWS::IAM::Policy'
     Condition: IncludeTransitGatewayModulePolicy
@@ -399,22 +396,21 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          # Actions that support resource-level permissions
           - Effect: "Allow"
             Action:
               - "ec2:DescribeTransitGatewayAttachments"
-            Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:transit-gateway-attachment/*"
-          # Actions that don't support resource-level permissions
+            Resource: '*' # Wildcard required as actions do not support resource-level permissions
           - Effect: "Allow"
             Action:
               - "cloudwatch:GetMetricStatistics"
-              - "cloudwatch:Describe*"
-              - "cloudwatch:Get*"
-              - "cloudwatch:List*"
+              #- "cloudwatch:Describe*"
+              #- "cloudwatch:Get*"
+              - "cloudwatch:GetMetricData"
+              #- "cloudwatch:List*"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
             #Condition:
             #  StringEquals:
-            #    "aws:AccountId": !Sub "${AWS::AccountId}"
+            #    cloudwatch:namespace: AWS/TransitGateway
       Roles:
         - Ref: LambdaRole
     Metadata:
