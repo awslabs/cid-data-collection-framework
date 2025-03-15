@@ -1,6 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: CID Data Collection - Role for Linked Account v3.8.0
-
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -139,7 +138,6 @@ Outputs:
   LambdaRole:
     Description: For lambda to assume in cost account
     Value: !GetAtt LambdaRole.Arn
-
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
@@ -171,7 +169,6 @@ Resources:
         rules_to_suppress:
           - id: W28
             reason: "Role must have an explicit RoleName for traceability"
-
   # Trusted Advisor policy
   TAPolicy:
     Type: 'AWS::IAM::Policy'
@@ -186,6 +183,9 @@ Resources:
               - "support:DescribeTrustedAdvisorChecks"
               - "support:DescribeTrustedAdvisorCheckResult"
             Resource: "*" ## Wildcard required as actions do not support resource-level permissions
+            Condition:
+              StringEquals:
+                "aws:AccountId": "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -193,7 +193,6 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-
   # Support Cases policy
   SupportCasesPolicy:
     Type: 'AWS::IAM::Policy'
@@ -208,6 +207,9 @@ Resources:
               - "support:DescribeCases"
               - "support:DescribeCommunications"
             Resource: "*" ## Wildcard required as actions do not support resource-level permissions
+            Condition:
+              StringEquals:
+                "aws:AccountId": "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -215,7 +217,6 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-
   # Budgets policy
   BudgetsReadOnlyPolicy:
     Type: 'AWS::IAM::Policy'
@@ -233,7 +234,6 @@ Resources:
             Resource: !Sub "arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/*"
       Roles:
         - Ref: LambdaRole
-
   # Inventory Collector policy - Split into resource-specific and global permissions
   InventoryCollectorPolicy:
     Type: 'AWS::IAM::Policy'
@@ -246,27 +246,6 @@ Resources:
           # Actions that support resource-level permissions
           - Effect: "Allow"
             Action:
-              - "ec2:DescribeImages"
-            Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:image/*"
-          - Effect: "Allow"
-            Action:
-              - "ec2:DescribeVolumes"
-            Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:volume/*"
-          - Effect: "Allow"
-            Action:
-              - "ec2:DescribeSnapshots"
-            Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:snapshot/*"
-          - Effect: "Allow"
-            Action:
-              - "ec2:DescribeInstances"
-            Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:instance/*"
-          - Effect: "Allow"
-            Action:
-              - "ec2:DescribeVpcs"
-            Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:vpc/*"
-          # RDS resources that support resource-level permissions
-          - Effect: "Allow"
-            Action:
               - "rds:DescribeDBClusters"
             Resource: !Sub "arn:${AWS::Partition}:rds:*:${AWS::AccountId}:cluster:*"
           - Effect: "Allow"
@@ -277,18 +256,15 @@ Resources:
             Action:
               - "rds:DescribeDBSnapshots"
             Resource: !Sub "arn:${AWS::Partition}:rds:*:${AWS::AccountId}:snapshot:*"
-          # ElasticSearch/OpenSearch resources
           - Effect: "Allow"
             Action:
               - "es:DescribeDomain"
               - "es:DescribeElasticsearchDomains"
             Resource: !Sub "arn:${AWS::Partition}:es:*:${AWS::AccountId}:domain/*"
-          # ElastiCache resources
           - Effect: "Allow"
             Action:
               - "elasticache:DescribeCacheClusters"
             Resource: !Sub "arn:${AWS::Partition}:elasticache:*:${AWS::AccountId}:cluster:*"
-          # EKS resources
           - Effect: "Allow"
             Action:
               - "eks:DescribeCluster"
@@ -297,26 +273,26 @@ Resources:
             Action:
               - "eks:DescribeNodegroup"
             Resource: !Sub "arn:${AWS::Partition}:eks:*:${AWS::AccountId}:nodegroup/*/*/*"
-          # Lambda resources
+          # Actions that require wildcard resources with account restriction
           - Effect: "Allow"
             Action:
-              - "lambda:ListFunctions"
-            Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:*"
-          # WorkSpaces resources
-          - Effect: "Allow"
-            Action:
-              - "workspaces:DescribeWorkspaces"
-              - "workspaces:DescribeWorkspaceDirectories"
-              - "workspaces:DescribeWorkspacesConnectionStatus"
-            Resource: !Sub "arn:${AWS::Partition}:workspaces:*:${AWS::AccountId}:workspace/*"
-          # Actions that don't support resource-level permissions
-          - Effect: "Allow"
-            Action:
+              - "ec2:DescribeImages"
+              - "ec2:DescribeVolumes"
+              - "ec2:DescribeSnapshots"
+              - "ec2:DescribeInstances"
+              - "ec2:DescribeVpcs"
               - "ec2:DescribeRegions"
               - "es:ListDomainNames"
               - "eks:ListClusters"
               - "eks:ListNodegroups"
+              - "lambda:ListFunctions"
+              - "workspaces:DescribeWorkspaces"
+              - "workspaces:DescribeWorkspaceDirectories"
+              - "workspaces:DescribeWorkspacesConnectionStatus"
             Resource: "*" ## Wildcard required as actions do not support resource-level permissions
+            Condition:
+              StringEquals:
+                "aws:AccountId": "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -324,7 +300,6 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-
   # ECS Chargeback policy - Split into resource-specific and global permissions
   ECSChargebackPolicy:
     Type: 'AWS::IAM::Policy'
@@ -346,6 +321,9 @@ Resources:
               - "ecs:ListClusters"
               - "ec2:DescribeRegions"
             Resource: "*" ## Wildcard required as actions do not support resource-level permissions
+            Condition:
+              StringEquals:
+                "aws:AccountId": "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -353,7 +331,6 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-
   # RDS Utilization policy - Split into resource-specific and global permissions
   RDSUtilizationPolicy:
     Type: 'AWS::IAM::Policy'
@@ -368,19 +345,15 @@ Resources:
             Action:
               - "rds:DescribeDBInstances"
             Resource: !Sub "arn:${AWS::Partition}:rds:*:${AWS::AccountId}:db:*"
-          # CloudWatch metrics for RDS
-          - Effect: "Allow"
-            Action:
-              - "cloudwatch:GetMetricStatistics"
-            Resource: !Sub "arn:${AWS::Partition}:cloudwatch:*:${AWS::AccountId}:*"
-            Condition:
-              StringEquals:
-                "cloudwatch:namespace": "AWS/RDS"
           # Actions that don't support resource-level permissions
           - Effect: "Allow"
             Action:
               - "ec2:DescribeRegions"
+              - "cloudwatch:GetMetricStatistics"
             Resource: "*" ## Wildcard required as actions do not support resource-level permissions
+            Condition:
+              StringEquals:
+                "aws:AccountId": "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -388,7 +361,6 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-
   # EUC Utilization policy - Split into resource-specific and global permissions
   EUCUtilizationPolicy:
     Type: 'AWS::IAM::Policy'
@@ -398,25 +370,17 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          # Actions that support resource-level permissions
-          - Effect: "Allow"
-            Action:
-              - "workspaces:DescribeWorkspaces"
-            Resource: !Sub "arn:${AWS::Partition}:workspaces:*:${AWS::AccountId}:workspace/*"
-          # CloudWatch metrics for WorkSpaces
-          - Effect: "Allow"
-            Action:
-              - "cloudwatch:GetMetricStatistics"
-            Resource: !Sub "arn:${AWS::Partition}:cloudwatch:*:${AWS::AccountId}:*"
-            Condition:
-              StringEquals:
-                "cloudwatch:namespace": "AWS/WorkSpaces"
           # Actions that don't support resource-level permissions
           - Effect: "Allow"
             Action:
+              - "workspaces:DescribeWorkspaces"
               - "ec2:DescribeRegions"
+              - "cloudwatch:GetMetricStatistics"
               - "cloudwatch:ListMetrics"
             Resource: "*" ## Wildcard required as actions do not support resource-level permissions
+            Condition:
+              StringEquals:
+                "aws:AccountId": "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -424,7 +388,6 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-
   # Transit Gateway policy - Split into resource-specific and global permissions
   TransitGatewayPolicy:
     Type: 'AWS::IAM::Policy'
@@ -439,21 +402,17 @@ Resources:
             Action:
               - "ec2:DescribeTransitGatewayAttachments"
             Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:transit-gateway-attachment/*"
-          # CloudWatch metrics for Transit Gateway
-          - Effect: "Allow"
-            Action:
-              - "cloudwatch:GetMetricStatistics"
-            Resource: !Sub "arn:${AWS::Partition}:cloudwatch:*:${AWS::AccountId}:*"
-            Condition:
-              StringEquals:
-                "cloudwatch:namespace": "AWS/TransitGateway"
           # Actions that don't support resource-level permissions
           - Effect: "Allow"
             Action:
+              - "cloudwatch:GetMetricStatistics"
               - "cloudwatch:Describe*"
-                                 
+              - "cloudwatch:Get*"
               - "cloudwatch:List*"
             Resource: "*" ## Wildcard required as actions do not support resource-level permissions
+            Condition:
+              StringEquals:
+                "aws:AccountId": "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -461,7 +420,6 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-
   # Service Quotas policy - Split into resource-specific and global permissions
   ServiceQuotasReadOnlyPolicy:
     Type: 'AWS::IAM::Policy'
@@ -481,6 +439,7 @@ Resources:
           # Actions that don't support resource-level permissions
           - Effect: "Allow"
             Action:
+              - "servicequotas:ListServices"
               - "rds:DescribeAccountAttributes"
               - "elasticloadbalancing:DescribeAccountLimits"
               - "dynamodb:DescribeLimits"
@@ -488,6 +447,9 @@ Resources:
               - "autoscaling:DescribeAccountLimits"
               - "route53:GetAccountLimit"
             Resource: "*" ## Wildcard required as actions do not support resource-level permissions
+            Condition:
+              StringEquals:
+                "aws:AccountId": "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
