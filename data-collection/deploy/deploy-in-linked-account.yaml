@@ -182,10 +182,10 @@ Resources:
             Action:
               - "support:DescribeTrustedAdvisorChecks"
               - "support:DescribeTrustedAdvisorCheckResult"
-            Resource: "*" ## Wildcard required as actions do not support resource-level permissions
-            Condition:
-              StringEquals:
-                "aws:AccountId": "${AWS::AccountId}"
+            Resource: "*" # Wildcard required as actions do not support resource-level permissions
+            #Condition:
+            #  StringEquals:
+            #   "aws:AccountId": !Sub "${AWS::AccountId}" # DescribeTrustedAdvisorChecks DescribeTrustedAdvisorCheckResult do not support conditions
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -206,10 +206,10 @@ Resources:
             Action:
               - "support:DescribeCases"
               - "support:DescribeCommunications"
-            Resource: "*" ## Wildcard required as actions do not support resource-level permissions
-            Condition:
-              StringEquals:
-                "aws:AccountId": "${AWS::AccountId}"
+            Resource: "*" # Wildcard required as actions do not support resource-level permissions
+            #Condition:
+            #  StringEquals:
+            #    "aws:AccountId": !Sub "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -255,7 +255,9 @@ Resources:
           - Effect: "Allow"
             Action:
               - "rds:DescribeDBSnapshots"
-            Resource: !Sub "arn:${AWS::Partition}:rds:*:${AWS::AccountId}:snapshot:*"
+            Resource:
+              - !Sub "arn:${AWS::Partition}:rds:*:${AWS::AccountId}:snapshot:*"
+              - !Sub "arn:${AWS::Partition}:rds:*:${AWS::AccountId}:db:*"
           - Effect: "Allow"
             Action:
               - "es:DescribeDomain"
@@ -289,10 +291,10 @@ Resources:
               - "workspaces:DescribeWorkspaces"
               - "workspaces:DescribeWorkspaceDirectories"
               - "workspaces:DescribeWorkspacesConnectionStatus"
-            Resource: "*" ## Wildcard required as actions do not support resource-level permissions
-            Condition:
-              StringEquals:
-                "aws:AccountId": "${AWS::AccountId}"
+            Resource: "*" # Wildcard required as actions do not support resource-level permissions
+            #Condition:
+            #  StringEquals:
+            #    "aws:AccountId": !Sub "${AWS::AccountId}" ## not supported es:ListDomainNames ec2:DescribeSnapshots "ec2:DescribeVolumes
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -320,10 +322,10 @@ Resources:
               - "ecs:ListServices"
               - "ecs:ListClusters"
               - "ec2:DescribeRegions"
-            Resource: "*" ## Wildcard required as actions do not support resource-level permissions
+            Resource: "*" # Wildcard required as actions do not support resource-level permissions
             Condition:
               StringEquals:
-                "aws:AccountId": "${AWS::AccountId}"
+                "aws:AccountId": !Sub "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -350,10 +352,10 @@ Resources:
             Action:
               - "ec2:DescribeRegions"
               - "cloudwatch:GetMetricStatistics"
-            Resource: "*" ## Wildcard required as actions do not support resource-level permissions
+            Resource: "*" # Wildcard required as actions do not support resource-level permissions
             Condition:
               StringEquals:
-                "aws:AccountId": "${AWS::AccountId}"
+                "aws:AccountId": !Sub "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -377,10 +379,10 @@ Resources:
               - "ec2:DescribeRegions"
               - "cloudwatch:GetMetricStatistics"
               - "cloudwatch:ListMetrics"
-            Resource: "*" ## Wildcard required as actions do not support resource-level permissions
+            Resource: "*" # Wildcard required as actions do not support resource-level permissions
             Condition:
               StringEquals:
-                "aws:AccountId": "${AWS::AccountId}"
+                "aws:AccountId": !Sub "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -409,10 +411,10 @@ Resources:
               - "cloudwatch:Describe*"
               - "cloudwatch:Get*"
               - "cloudwatch:List*"
-            Resource: "*" ## Wildcard required as actions do not support resource-level permissions
-            Condition:
-              StringEquals:
-                "aws:AccountId": "${AWS::AccountId}"
+            Resource: "*" # Wildcard required as actions do not support resource-level permissions
+            #Condition:
+            #  StringEquals:
+            #    "aws:AccountId": !Sub "${AWS::AccountId}"
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -420,7 +422,7 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-  # Service Quotas policy - Split into resource-specific and global permissions
+  # Service Quotas policy
   ServiceQuotasReadOnlyPolicy:
     Type: 'AWS::IAM::Policy'
     Condition: IncludeServiceQuotasModulePolicy
@@ -429,16 +431,11 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          # Actions that support resource-level permissions
           - Effect: "Allow"
             Action:
               - "servicequotas:ListRequestedServiceQuotaChangeHistory"
               - "servicequotas:GetServiceQuota"
               - "servicequotas:GetAWSDefaultServiceQuota"
-            Resource: !Sub "arn:${AWS::Partition}:servicequotas:*:${AWS::AccountId}:*"
-          # Actions that don't support resource-level permissions
-          - Effect: "Allow"
-            Action:
               - "servicequotas:ListServices"
               - "rds:DescribeAccountAttributes"
               - "elasticloadbalancing:DescribeAccountLimits"
@@ -446,10 +443,10 @@ Resources:
               - "cloudformation:DescribeAccountLimits"
               - "autoscaling:DescribeAccountLimits"
               - "route53:GetAccountLimit"
-            Resource: "*" ## Wildcard required as actions do not support resource-level permissions
-            Condition:
-              StringEquals:
-                "aws:AccountId": "${AWS::AccountId}"
+            Resource: "*" # Wildcard required as actions do not support resource-level permissions
+            #Condition:
+            #  StringEquals:
+            #    "aws:AccountId": !Sub "${AWS::AccountId}" # Not supported by "servicequotas:ListRequestedServiceQuotaChangeHistory"
       Roles:
         - Ref: LambdaRole
     Metadata:
