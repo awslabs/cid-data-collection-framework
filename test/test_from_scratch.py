@@ -279,7 +279,7 @@ def test_content_of_summary_not_empty(s3):
         ]
     )
     # Checking if summary is populated
-    for i in range(300):
+    for i in range(3):
         time.sleep(10)
         case_data_content = json.loads(s3_client.get_object(Bucket=COLLECTION_BUCKET, Key=data_key)['Body'].read().decode('utf-8'))
         if case_data_content['Summary']:
