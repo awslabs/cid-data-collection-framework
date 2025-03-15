@@ -313,6 +313,11 @@ Resources:
               - "rds:DescribeDBInstances"
               - "rds:DescribeDBClusters"
             Resource: "*"
+          - Effect: "Allow"
+            Action:
+              - "compute-optimizer:ExportIdleRecommendations"
+              - "compute-optimizer:GetIdleRecommendations"
+            Resource: "*"
       Roles:
         - Ref: LambdaRole
     Metadata:
