@@ -126,7 +126,6 @@ Resources:
                   - s3:DeleteBucket
                   - s3:ListBucket
                   - s3:Put*
-                  - s3:Set*
                   - s3:Get*
                   - s3:Replicate*
                   - s3:DeleteBucketPolicy
