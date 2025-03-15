@@ -15,7 +15,6 @@ Metadata:
           - IncludeBackupModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
-          - IncludeSupportCasesModule
           - IncludeHealthEventsModule
           - IncludeRightsizingModule
           - IncludeLicenseManagerModule
@@ -31,8 +30,6 @@ Metadata:
         default: "Include AWS Compute Optimizer Data Collection Module"
       IncludeCostAnomalyModule:
         default: "Include Cost Anomalies Data Collection Module"
-      IncludeSupportCasesModule:
-        default: "Include Support Cases Data Collection Module"
       IncludeRightsizingModule:
         default: "Include Rightsizing Recommendations Data Collection Module"
       IncludeBackupModule:
@@ -65,11 +62,6 @@ Parameters:
     Description: "Collects AWS Cost Explorer Cost Anomalies Recommendations"
     AllowedValues: ['yes', 'no']
     Default: 'no'
-  IncludeSupportCasesModule:
-    Type: String
-    Description: "Collects AWS Support Cases data"
-    AllowedValues: ['yes', 'no']
-    Default: 'no'
   IncludeRightsizingModule:
     Type: String
     Description: "Collects AWS Cost Explorer Rightsizing Recommendations"
@@ -99,7 +91,6 @@ Parameters:
 Conditions:
   EnableComputeOptimizerModule: !Equals [!Ref IncludeComputeOptimizerModule, "yes"]
   EnableCostAnomaliesModule: !Equals [!Ref IncludeCostAnomalyModule, "yes"]
-  EnableSupportCasesModule: !Equals [!Ref IncludeSupportCasesModule, "yes"]
   EnableRightsizingModule: !Equals [!Ref IncludeRightsizingModule, "yes"]
   EnableBackupModule: !Equals [!Ref IncludeBackupModule, "yes"]
   EnableHealthEventsModule: !Equals [!Ref IncludeHealthEventsModule, "yes"]
@@ -206,26 +197,6 @@ Resources:
           - Effect: "Allow"
             Action:
               - "ce:GetAnomalies"
-            Resource: "*"
-      Roles:
-        - Ref: LambdaRole
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: "Policy is used for scanning of a wide range of resources"
-  SupportCasesPolicy:
-    Type: "AWS::IAM::Policy"
-    Condition: EnableSupportCasesModule
-    Properties:
-      PolicyName: SupportCasesPolicy
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: "Allow"
-            Action:
-              - "support:DescribeCases"
-              - "support:DescribeCommunications"
             Resource: "*"
       Roles:
         - Ref: LambdaRole

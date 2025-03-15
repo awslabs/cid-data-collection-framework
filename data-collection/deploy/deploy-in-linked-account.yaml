@@ -183,9 +183,6 @@ Resources:
               - "support:DescribeTrustedAdvisorChecks"
               - "support:DescribeTrustedAdvisorCheckResult"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
-            #Condition:
-            #  StringEquals:
-            #   "aws:AccountId": !Sub "${AWS::AccountId}" # DescribeTrustedAdvisorChecks DescribeTrustedAdvisorCheckResult do not support conditions
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -289,9 +286,6 @@ Resources:
               - "workspaces:DescribeWorkspaceDirectories"
               - "workspaces:DescribeWorkspacesConnectionStatus"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
-            #Condition:
-            #  StringEquals:
-            #    "aws:AccountId": !Sub "${AWS::AccountId}" ## not supported es:ListDomainNames ec2:DescribeSnapshots "ec2:DescribeVolumes
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -345,11 +339,14 @@ Resources:
           - Effect: "Allow"
             Action:
               - "ec2:DescribeRegions"
+            Resource: "*" # Wildcard required as actions do not support resource-level permissions
+          - Effect: "Allow"
+            Action:
               - "cloudwatch:GetMetricStatistics"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
-            #Condition:
-            #  StringEquals:
-            #    "aws:AccountId": !Sub "${AWS::AccountId}"
+            Condition:
+              StringEquals:
+                cloudwatch:namespace: AWS/WorkSpaces
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -375,7 +372,7 @@ Resources:
           - Effect: "Allow"
             Action:
               - "cloudwatch:GetMetricStatistics"
-              - "cloudwatch:ListMetrics"
+#              - "cloudwatch:ListMetrics"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
             Condition:
               StringEquals:
@@ -403,14 +400,8 @@ Resources:
           - Effect: "Allow"
             Action:
               - "cloudwatch:GetMetricStatistics"
-              #- "cloudwatch:Describe*"
-              #- "cloudwatch:Get*"
-              - "cloudwatch:GetMetricData"
-              #- "cloudwatch:List*"
+#              - "cloudwatch:GetMetricData"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
-            #Condition:
-            #  StringEquals:
-            #    cloudwatch:namespace: AWS/TransitGateway
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -440,9 +431,6 @@ Resources:
               - "autoscaling:DescribeAccountLimits"
               - "route53:GetAccountLimit"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
-            #Condition:
-            #  StringEquals:
-            #    "aws:AccountId": !Sub "${AWS::AccountId}" # Not supported by "servicequotas:ListRequestedServiceQuotaChangeHistory"
       Roles:
         - Ref: LambdaRole
     Metadata:

@@ -196,7 +196,6 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         IncludeComputeOptimizerModule: !Ref IncludeComputeOptimizerModule
         IncludeCostAnomalyModule: !Ref IncludeCostAnomalyModule
-        IncludeSupportCasesModule: !Ref IncludeSupportCasesModule
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
         IncludeBackupModule: !Ref IncludeBackupModule
         IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
@@ -216,7 +215,7 @@ Resources:
         IncludeInventoryCollectorModule: !Ref IncludeInventoryCollectorModule
         IncludeECSChargebackModule: !Ref IncludeECSChargebackModule
         IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
-        IncludeEUCUtilizationModule: !Ref IncludeEUCUtilizationModule       
+        IncludeEUCUtilizationModule: !Ref IncludeEUCUtilizationModule
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
         IncludeServiceQuotasModule: !Ref IncludeServiceQuotasModule
@@ -252,7 +251,7 @@ Resources:
         - ParameterKey: IncludeRDSUtilizationModule
           ParameterValue: !Ref IncludeRDSUtilizationModule
         - ParameterKey: IncludeEUCUtilizationModule
-          ParameterValue: !Ref IncludeEUCUtilizationModule          
+          ParameterValue: !Ref IncludeEUCUtilizationModule
         - ParameterKey: IncludeBudgetsModule
           ParameterValue: !Ref IncludeBudgetsModule
         - ParameterKey: IncludeTransitGatewayModule
