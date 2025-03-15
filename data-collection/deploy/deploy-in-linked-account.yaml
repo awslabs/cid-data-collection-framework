@@ -343,10 +343,8 @@ Resources:
           - Effect: "Allow"
             Action:
               - "cloudwatch:GetMetricStatistics"
+              - "cloudwatch:GetMetricData"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
-            Condition:
-              StringEquals:
-                cloudwatch:namespace: AWS/WorkSpaces
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -372,11 +370,8 @@ Resources:
           - Effect: "Allow"
             Action:
               - "cloudwatch:GetMetricStatistics"
-#              - "cloudwatch:ListMetrics"
+              - "cloudwatch:GetMetricData"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
-            Condition:
-              StringEquals:
-                cloudwatch:namespace: AWS/WorkSpaces
       Roles:
         - Ref: LambdaRole
     Metadata:
@@ -400,7 +395,7 @@ Resources:
           - Effect: "Allow"
             Action:
               - "cloudwatch:GetMetricStatistics"
-#              - "cloudwatch:GetMetricData"
+              - "cloudwatch:GetMetricData"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
       Roles:
         - Ref: LambdaRole
