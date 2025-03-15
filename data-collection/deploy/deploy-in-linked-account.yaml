@@ -106,33 +106,15 @@ Parameters:
     Default: 'no'
 
 Conditions:
-  IncludeTAModulePolicy: !Equals
-    - !Ref IncludeTAModule
-    - "yes"
-  IncludeSupportCasesModulePolicy: !Equals
-    - !Ref IncludeSupportCasesModule
-    - "yes"
-  IncludeInventoryCollectorModulePolicy: !Equals
-    - !Ref IncludeInventoryCollectorModule
-    - "yes"
-  IncludeECSChargebackModulePolicy: !Equals
-    - !Ref IncludeECSChargebackModule
-    - "yes"
-  IncludeRDSUtilizationModulePolicy: !Equals
-    - !Ref IncludeRDSUtilizationModule
-    - "yes"
-  IncludeEUCUtilizationModulePolicy: !Equals
-    - !Ref IncludeEUCUtilizationModule
-    - "yes"
-  IncludeBudgetsModulePolicy: !Equals
-    - !Ref IncludeBudgetsModule
-    - "yes"
-  IncludeTransitGatewayModulePolicy: !Equals
-    - !Ref IncludeTransitGatewayModule
-    - "yes"
-  IncludeServiceQuotasModulePolicy: !Equals
-    - !Ref IncludeServiceQuotasModule
-    - "yes"
+  IncludeTAModulePolicy:                 !Equals [!Ref IncludeTAModule, "yes"]
+  IncludeSupportCasesModulePolicy:       !Equals [!Ref IncludeSupportCasesModule, "yes"]
+  IncludeInventoryCollectorModulePolicy: !Equals [!Ref IncludeInventoryCollectorModule, "yes"]
+  IncludeECSChargebackModulePolicy:      !Equals [!Ref IncludeECSChargebackModule, "yes"]
+  IncludeRDSUtilizationModulePolicy:     !Equals [!Ref IncludeRDSUtilizationModule, "yes"]
+  IncludeEUCUtilizationModulePolicy:     !Equals [!Ref IncludeEUCUtilizationModule, "yes"]
+  IncludeBudgetsModulePolicy:            !Equals [!Ref IncludeBudgetsModule, "yes"]
+  IncludeTransitGatewayModulePolicy:     !Equals [!Ref IncludeTransitGatewayModule, "yes"]
+  IncludeServiceQuotasModulePolicy:      !Equals [!Ref IncludeServiceQuotasModule, "yes"]
 
 Outputs:
   LambdaRole:
