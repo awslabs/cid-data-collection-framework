@@ -1,0 +1,176 @@
+{
+    "Comment": "Orchestrate the collection of WorkSpaces metrics data with EUC account handling",
+    "StartAt": "FormatEUCAccounts",
+    "States": {
+        "FormatEUCAccounts": {
+            "Type": "Pass",
+            "Parameters": {
+                "eucAccountIds.$": "$.eucAccountIds",
+                "euc_accounts.$": "States.StringSplit(States.JsonToString($.eucAccountIds), ',')"
+            },
+            "Next": "FilterEmptyAccounts"
+        },
+        "FilterEmptyAccounts": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "And": [
+                        {
+                            "Variable": "$.eucAccountIds",
+                            "IsPresent": true
+                        },
+                        {
+                            "Not": {
+                                "Variable": "$.eucAccountIds",
+                                "StringEquals": ""
+                            }
+                        }
+                    ],
+                    "Next": "ProcessEUCAccounts"
+                }
+            ],
+            "Default": "AccountCollectorInvoke"
+        },
+        "ProcessEUCAccounts": {
+            "Type": "Pass",
+            "Parameters": {
+                "accountLambdaOutput": {
+                    "Payload": {
+                        "accounts": {
+                            "account.$": "$.euc_accounts"
+                        }
+                    }
+                }
+            },
+            "Next": "AccountMapDirect"
+        },
+        "AccountCollectorInvoke": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+                "Payload": {
+                    "Type": "${CollectionType}"
+                },
+                "FunctionName": "${AccountCollectorLambdaARN}"
+            },
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 6,
+                    "BackoffRate": 2
+                }
+            ],
+            "Next": "AccountMapS3",
+            "ResultPath": "$.accountLambdaOutput"
+        },
+        "AccountMapDirect": {
+            "Type": "Map",
+            "ItemProcessor": {
+                "ProcessorConfig": {
+                    "Mode": "DISTRIBUTED",
+                    "ExecutionType": "STANDARD"
+                },
+                "StartAt": "InvokeModuleLambda",
+                "States": {
+                    "InvokeModuleLambda": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:${DeployRegion}:${Account}:lambda:invoke",
+                        "OutputPath": "$.Payload",
+                        "Parameters": {
+                            "Payload": {
+                                "account.$": "$.account",
+                                "params": "${Params}"
+                            },
+                            "FunctionName": "${ModuleLambdaARN}"
+                        },
+                        "Retry": [
+                            {
+                                "ErrorEquals": [
+                                    "Lambda.ServiceException",
+                                    "Lambda.AWSLambdaException",
+                                    "Lambda.SdkClientException",
+                                    "Lambda.TooManyRequestsException"
+                                ],
+                                "IntervalSeconds": 2,
+                                "MaxAttempts": 6,
+                                "BackoffRate": 2
+                            }
+                        ],
+                        "End": true
+                    }
+                }
+            },
+            "MaxConcurrency": 60,
+            "ItemsPath": "$.accountLambdaOutput.Payload.accounts.account",
+            "Next": "CrawlerStepFunctionStartExecution"
+        },
+        "AccountMapS3": {
+            "Type": "Map",
+            "ItemProcessor": {
+                "ProcessorConfig": {
+                    "Mode": "DISTRIBUTED",
+                    "ExecutionType": "STANDARD"
+                },
+                "StartAt": "InvokeModuleLambda",
+                "States": {
+                    "InvokeModuleLambda": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:${DeployRegion}:${Account}:lambda:invoke",
+                        "OutputPath": "$.Payload",
+                        "Parameters": {
+                            "Payload": {
+                                "account.$": "$.account",
+                                "params": "${Params}"
+                            },
+                            "FunctionName": "${ModuleLambdaARN}"
+                        },
+                        "Retry": [
+                            {
+                                "ErrorEquals": [
+                                    "Lambda.ServiceException",
+                                    "Lambda.AWSLambdaException",
+                                    "Lambda.SdkClientException",
+                                    "Lambda.TooManyRequestsException"
+                                ],
+                                "IntervalSeconds": 2,
+                                "MaxAttempts": 6,
+                                "BackoffRate": 2
+                            }
+                        ],
+                        "End": true
+                    }
+                }
+            },
+            "MaxConcurrency": 60,
+            "ItemReader": {
+                "Resource": "arn:aws:states:::s3:getObject",
+                "ReaderConfig": {
+                    "InputType": "JSON"
+                },
+                "Parameters": {
+                    "Bucket.$": "$.accountLambdaOutput.Payload.bucket",
+                    "Key.$": "$.accountLambdaOutput.Payload.accountList"
+                }
+            },
+            "Next": "CrawlerStepFunctionStartExecution"
+        },
+        "CrawlerStepFunctionStartExecution": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::states:startExecution.sync:2",
+            "Parameters": {
+                "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
+                "Input": {
+                    "crawlers": ${Crawlers}
+                }
+            },
+            "End": true
+        }
+    },
+    "TimeoutSeconds": 10800
+}

@@ -227,7 +227,6 @@ Resources:
           METRIC_NAMESPACE = 'AWS/WorkSpaces'
           METRIC_PERIOD = 3600
           BATCH_SIZE = 100  # Number of workspaces to process in each batch
-          EUC_ACCOUNT_IDS = os.environ.get('EUC_ACCOUNT_IDS', '')
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -270,7 +269,6 @@ Resources:
                   "BundleId": workspace.get("BundleId", ""),
                   "DirectoryId": workspace.get("DirectoryId", ""),
                   "ComputerName": workspace.get("ComputerName", ""),
-                  "WorkspaceProperties": workspace.get("WorkspaceProperties", {})
               }
               # Flatten WorkspaceProperties into individual columns
               if "WorkspaceProperties" in workspace:
@@ -481,52 +479,15 @@ Resources:
 
           def lambda_handler(event, context):
               logger.info(f"Event: {event}")
-
-              # Check if we're using specific EUC accounts or processing from the event
-              if EUC_ACCOUNT_IDS and EUC_ACCOUNT_IDS.strip():
-                  # Process specific accounts provided in the environment variable
-                  euc_accounts = [account.strip() for account in EUC_ACCOUNT_IDS.split(',') if account.strip()]
-                  logger.info(f"Using specific EUC accounts: {euc_accounts}")
-
-                  # Get the payer_id from the event if available, otherwise use a default
-                  payer_id = "unknown"
-                  if 'account' in event:
-                      try:
-                          account = json.loads(event["account"])
-                          payer_id = account.get("payer_id", "unknown")
-                      except:
-                          pass
-
-                  # Process accounts in parallel with a thread pool
-                  with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(euc_accounts))) as executor:
-                      future_to_account = {
-                          executor.submit(process_account, account_id, payer_id): account_id
-                          for account_id in euc_accounts
-                      }
-                      for future in concurrent.futures.as_completed(future_to_account):
-                          account_id = future_to_account[future]
-                          try:
-                              future.result()
-                              logger.info(f"Successfully processed account {account_id}")
-                          except Exception as e:
-                              logger.error(f"Error processing account {account_id}: {str(e)}")
-              elif 'account' in event:
-                  # Process the account from the event (original behavior)
-                  try:
-                      account = json.loads(event["account"])
-                      account_id = account["account_id"]
-                      payer_id = account["payer_id"]
-                      logger.info(f"Collecting data for account from event: {account_id}")
-                      process_account(account_id, payer_id)
-                  except Exception as e:
-                      logger.error(f"Error processing account from event: {str(e)}")
-                      raise
-              else:
-                  raise ValueError(
-                      "Please do not trigger this Lambda manually. "
-                      "Find the corresponding state machine in Step Functions and Trigger from there, "
-                      "or specify EUC_ACCOUNT_IDS environment variable."
-                  )
+              try:
+                  account = json.loads(event["account"])
+                  account_id = account["account_id"]
+                  payer_id = account["payer_id"]
+                  logger.info(f"Collecting data for account from event: {account_id}")
+                  process_account(account_id, payer_id)
+              except Exception as e:
+                  logger.error(f"Error processing account from event: {str(e)}")
+                  raise
               return "Successful"
 
           def process_account(account_id, payer_id):
@@ -584,7 +545,6 @@ Resources:
           ROLENAME: !Ref MultiAccountRoleName
           REGIONS: !Ref RegionsInScope
           ROLE_SESSION_NAME: data_collection
-          EUC_ACCOUNT_IDS: !Ref EUCAccountIDs
 
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -635,6 +595,10 @@ Resources:
       Target:
         Arn: !GetAtt ModuleStepFunction.Arn
         RoleArn: !Ref SchedulerExecutionRoleARN
+        Input: !Sub |
+          {
+            "eucAccountIds": "${EUCAccountIDs}"
+          }
 
   AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
