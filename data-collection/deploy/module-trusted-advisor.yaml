@@ -162,39 +162,31 @@ Resources:
                   payer_id = account["payer_id"]
                   logger.info(f"Collecting data for account: {account_id}")
                   read_ta(account_id, account_name)
-                  upload_to_s3(account_id, payer_id, "standard")
+                  upload_to_s3(account_id, payer_id, "data")
                   # TA Priority Recommendations
                   recommendations = get_priority_recommendations(account_id)
                   write_to_file(account_id, account_name, payer_id, recommendations)
-                  upload_to_s3(account_id, payer_id, "priority")
+                  upload_to_s3(account_id, payer_id, "priority-data")
               except Exception as e:
                   logging.warning(e)
 
-          def upload_to_s3(account_id, payer_id, file):
+          def upload_to_s3(account_id, payer_id, suffix):
               d = datetime.now()
               month = d.strftime("%m")
               year = d.strftime("%Y")
               _date = d.strftime("%d%m%Y-%H%M%S")
-              if file == "standard":
-                  if os.path.getsize(TMP_FILE) == 0:
-                      print(f"No data in file for {PREFIX}")
-                      return
-                  key = f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year={year}/month={month}/{PREFIX}-{account_id}-{_date}.json"
-                  try:
-                      boto3.client("s3").upload_file(TMP_FILE, BUCKET, key)
-                      print(f"Data for {account_id} in s3 - {key}")
-                  except Exception as e:
-                      print(f"{type(e)}: {e}")
-              else:
-                  if os.path.getsize(TMP_FILE_Priority) == 0:
-                      print(f"No data in file for {PREFIX}-priority-data")
-                      return
-                  key = f"{PREFIX}/{PREFIX}-priority-data/payer_id={payer_id}/year={year}/month={month}/{PREFIX}-{account_id}-{_date}.json"
-                  try:
-                      boto3.client("s3").upload_file(TMP_FILE_Priority, BUCKET, key)
-                      print(f"Data for {account_id} in s3 - {key}")
-                  except Exception as e:
-                      print(f"{type(e)}: {e}")
+              key = f"{PREFIX}/{PREFIX}-{suffix}/payer_id={payer_id}/year={year}/month={month}/{PREFIX}-{account_id}-{_date}.json"
+              tmp_file = TMP_FILE if suffix == "data" else TMP_FILE_Priority
+
+              if os.path.getsize(tmp_file) == 0:
+                  print(f"No data in file for {PREFIX}{'-' + suffix if suffix != 'data' else ''}")
+                  return
+        
+              try:
+                  boto3.client("s3").upload_file(tmp_file, BUCKET, key)
+                  print(f"Data for {account_id} in s3 - {key}")
+              except Exception as e:
+                  print(f"{type(e)}: {e}")
 
           def assume_role(account_id, service, region, role):
               partition = boto3.session.Session().get_partition_for_region(region_name=region)
@@ -264,11 +256,10 @@ Resources:
                   print(f"Error fetching recommendations: {str(e)}")
                   raise
       
-          def get_recommendation_details(account_id, recommendation_arn: str) -> Dict:
+          def get_recommendation_details(trustedadvisor, recommendation_arn: str) -> Dict:
               """
               Get detailed information about a recommendation
               """
-              trustedadvisor = assume_role(account_id, "trustedadvisor", REGIONS[0], ROLE_NAME)
               try:
                   response = trustedadvisor.get_recommendation(
                       recommendationIdentifier=recommendation_arn
@@ -278,13 +269,12 @@ Resources:
                   print(f"Error getting recommendation details for {recommendation_arn}: {str(e)}")
                   raise
       
-          def get_resource_summaries(account_id,recommendation_id: str) -> List[Dict]:
+          def get_resource_summaries(trustedadvisor,recommendation_id: str) -> List[Dict]:
               """
               Fetch resource summaries for a given recommendation ID using pagination
               """
               resources = []
               next_token = None
-              trustedadvisor = assume_role(account_id, "trustedadvisor", REGIONS[0], ROLE_NAME)
               try:
                   while True:
                       params = {'recommendationIdentifier': recommendation_id}
@@ -311,46 +301,38 @@ Resources:
               """
               Write recommendations and their resources to a file
               """
-              
+              trustedadvisor = assume_role(account_id, "trustedadvisor", REGIONS[0], ROLE_NAME)
               try:
                   with open(TMP_FILE_Priority, 'w', encoding='utf-8') as jsonfile:
                       for recommendation in recommendations:
                           rec_id = recommendation['id']
-                          rec_name = recommendation['name']
-                          rec_aws_services = recommendation.get('awsServices', 'N/A')
                           rec_creation_date = recommendation['createdAt'].isoformat() if isinstance(recommendation['createdAt'], datetime) else 'N/A'
                           rec_lastupdated_date = recommendation['lastUpdatedAt'].isoformat() if isinstance(recommendation['lastUpdatedAt'], datetime) else 'N/A'
-                          rec_lifecycle_stage = recommendation['lifecycleStage']
-                          rec_status = recommendation['status']
-                          rec_arn = recommendation['arn']
-                          rec_pillars = recommendation['pillars']
-                          rec_source = recommendation['source']
                           
                           # Get recommendation details including resolved date
-                          recommendation_details = get_recommendation_details(account_id, rec_arn)
+                          recommendation_details = get_recommendation_details(trustedadvisor, recommendation['arn'])
                           rec_resolved_date = recommendation_details['resolvedAt'].isoformat() if isinstance(recommendation_details['resolvedAt'], datetime) else 'N/A'
-                          rec_description = recommendation_details['description']
 
                           # Get resources for this recommendation
                           try:
-                              resources = get_resource_summaries(account_id, rec_arn)
+                              resources = get_resource_summaries(trustedadvisor, recommendation['arn'])
                           except Exception as e:
                               print(f"Error getting resources for recommendation {rec_id}: {str(e)}")
                               resources = []
                           
                           # Base recommendation data
                           rec_data = {
-                              'recommArn': rec_arn,
-                              'name': rec_name,
-                              'description': rec_description,
-                              'awsServices': rec_aws_services,
+                              'recommendationArn': recommendation['arn'],
+                              'name': recommendation['name'],
+                              'description': recommendation_details['description'],
+                              'awsServices': recommendation.get('awsServices', 'N/A'),
                               'createdAt': rec_creation_date,
                               'resolvedAt': rec_resolved_date,
                               'lastUpdatedAt': rec_lastupdated_date,
-                              'lifecycleStage': rec_lifecycle_stage,
-                              'recommStatus': rec_status,
-                              'pillars': rec_pillars,
-                              'source': rec_source,
+                              'lifecycleStage': recommendation['lifecycleStage'],
+                              'recommendationStatus': recommendation['status'],
+                              'pillars': recommendation['pillars'],
+                              'source': recommendation['source'],
                               'accountID': account_id,
                               'accountName': account_name
                           }
@@ -416,6 +398,65 @@ Resources:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-priority-data/"
       Configuration: "{\"Version\":1.0,\"Grouping\":{\"TableGroupingPolicy\":\"CombineCompatibleSchemas\"}}"
 
+  # Add glue table for trusted advisor priority data
+  TAPriorityTable:
+    Type: AWS::Glue::Table
+    Properties:
+      DatabaseName: !Ref DatabaseName
+      CatalogId: !Ref AWS::AccountId
+      TableInput:
+        Name: trusted_advisor_priority_data
+        TableType: EXTERNAL_TABLE
+        StorageDescriptor:
+          Columns:
+            - Name: recommendationArn
+              Type: string
+            - Name: name
+              Type: string
+            - Name: description
+              Type: string
+            - Name: awsServices
+              Type: string
+            - Name: createdAt
+              Type: string
+            - Name: resolvedAt
+              Type: string
+            - Name: lastUpdatedAt
+              Type: string
+            - Name: lifecycleStage
+              Type: string
+            - Name: recommendationStatus
+              Type: string
+            - Name: pillars
+              Type: string
+            - Name: source
+              Type: string
+            - Name: accountID
+              Type: string
+            - Name: accountName
+              Type: string
+            - Name: awsResourceId
+              Type: string
+            - Name: exclusionStatus
+              Type: string
+            - Name: regionCode
+              Type: string
+            - Name: resourceStatus
+              Type: string
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-priority-data/"
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: recommendationArn,name,description,awsServices,createdAt,resolvedAt,lastUpdatedAt,lifecycleStage,recommendationStatus,pillars,source,accountID,accountName,awsResourceId,exclusionStatus,regionCode,resourceStatus
+        PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
