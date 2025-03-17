@@ -164,6 +164,9 @@ Resources:
             Action:
               - "support:DescribeTrustedAdvisorChecks"
               - "support:DescribeTrustedAdvisorCheckResult"
+              - "trustedadvisor:ListRecommendations"
+              - "trustedadvisor:ListRecommendationResources"
+              - "trustedadvisor:GetRecommendation"
             Resource: "*" # Wildcard required as actions do not support resource-level permissions
       Roles:
         - Ref: LambdaRole
