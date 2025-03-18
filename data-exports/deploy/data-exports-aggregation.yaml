@@ -538,15 +538,13 @@ Resources:
           import boto3
 
           POLICY_SID = os.environ['POLICY_SID']
+          BUCKET_NAME = os.environ['BUCKET_NAME']
+          s3 = boto3.client('s3')
 
           def lambda_handler(event, context):
-              s3 = boto3.client('s3')
               action = event.get('action', 'enable')  # 'enable' or 'disable'
-              bucket_name = os.environ['BUCKET_NAME']
-
               try:
-                  policy = json.loads(s3.get_bucket_policy(Bucket=bucket_name)['Policy'])
-
+                  policy = json.loads(s3.get_bucket_policy(Bucket=BUCKET_NAME)['Policy'])
                   # Find and modify the policy statement
                   for statement in policy['Statement']:
                       if statement.get('Sid') == POLICY_SID:
@@ -554,19 +552,10 @@ Resources:
                           break
                   else:
                       raise Exception(f'{POLICY_SID} statement not found in policy')
-
-                  s3.put_bucket_policy(Bucket=bucket_name, Policy=json.dumps(policy))
-
-                  return {
-                      'statusCode': 200,
-                      'body': f'Successfully {action}d {POLICY_SID} statement'
-                  }
-
+                  s3.put_bucket_policy(Bucket=BUCKET_NAME, Policy=json.dumps(policy))
+                  return {'statusCode': 200, 'body': f'Successfully {action}d {POLICY_SID} statement'}
               except Exception as e:
-                  return {
-                      'statusCode': 500,
-                      'body': str(e)
-                  }
+                  return {'statusCode': 500, 'body': str(e) }
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationS3
@@ -621,20 +610,6 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt EnableRuleSchedule.Arn
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
   # CUR2
 
