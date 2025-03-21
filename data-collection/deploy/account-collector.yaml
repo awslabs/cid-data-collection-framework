@@ -22,6 +22,18 @@ Parameters:
     Type: String
     Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
     Default: ""
+  EUCAccountIDs:
+    Type: String
+    Description: "Comma-separated list of account IDs that user has identified to have WorkSpaces running, used to collect WorkSpaces metrics from. If left blank, metrics will be checked from all linked accounts in Organisation."
+    Default: ""
+  EnableEUCFiltering:
+    Type: String
+    Default: "no"
+    AllowedValues: 
+      - "yes"
+      - "no"
+    Description: "Enable filtering for specific EUC accounts. Default is no for other modules"
+
 Outputs:
   LambdaFunctionName:
     Value: !Ref LambdaFunction
@@ -136,6 +148,7 @@ Resources:
             LINKED_ACCOUNT_LIST_KEY = os.environ.get('LINKED_ACCOUNT_LIST_KEY')
             PAYER_ACCOUNT_LIST_KEY = os.environ.get('PAYER_ACCOUNT_LIST_KEY')
             EXCLUDED_ACCOUNT_LIST_KEY = os.environ.get('EXCLUDED_ACCOUNT_LIST_KEY')
+            EUC_ACCOUNTS = os.environ.get('EUC_ACCOUNT_IDS', '')
             TMP_FILE = "/tmp/data.json"
 
             logger = logging.getLogger(__name__)
@@ -153,7 +166,7 @@ Resources:
                     raise Exception(message) #pylint: disable=broad-exception-raised
 
                 functions = { # keep keys same as boto3 services
-                    'linked': iterate_linked_accounts,
+                    'linked': lambda: iterate_linked_accounts(event),
                     'payers': partial(iterate_admins_accounts, None),
                     'organizations': partial(iterate_admins_accounts, 'organizations'),
                     'compute-optimizer': partial(iterate_admins_accounts, 'compute-optimizer'),
@@ -199,7 +212,28 @@ Resources:
                             logger.warning(f'Not found ssm parameter {ssm_key}. Will use Management Account Id {payer_id}')
                     yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id})}
 
-            def iterate_linked_accounts():
+            def iterate_linked_accounts(event_data):
+                # Check if this is the WorkSpaces module with EUC filtering enabled
+                params = event_data.get('Params', {})
+
+                is_euc_filtering = (isinstance(params, dict) and 
+                                  params.get('EnableEUCFiltering', '').lower() in ['yes', 'true'])
+                logger.info(f"EUC filtering enabled: {is_euc_filtering}")
+                logger.info(f"4. EUC_ACCOUNTS env var: {os.environ.get('EUC_ACCOUNT_IDS', '')}")
+
+                # Only apply EUC filtering for WorkSpaces module when enabled
+                if is_euc_filtering:
+                    euc_accounts = os.environ.get('EUC_ACCOUNT_IDS', '').strip()
+                    if euc_accounts:
+                        logger.info(f'EUC filtering enabled, processing accounts: {euc_accounts}')
+                        for account_id in euc_accounts.split(','):
+                            account_id = account_id.strip()
+                            payer_id = MANAGEMENT_ACCOUNT_IDS.split(',')[0].strip()
+                            yield format_account(account_id, f"Account-{account_id}", payer_id)
+                        return
+                    else:
+                        logger.info('EUC filtering enabled but no specific accounts provided - processing all accounts')
+
                 defined_accounts, ext = get_defined_list(BUCKET, PREDEF_ACCOUNT_LIST_KEY)
                 try:
                     if defined_accounts:
@@ -285,6 +319,7 @@ Resources:
           LINKED_ACCOUNT_LIST_KEY: "account-list/linked-account-list.json"
           PAYER_ACCOUNT_LIST_KEY: "account-list/payer-account-list.json"
           EXCLUDED_ACCOUNT_LIST_KEY: "account-list/excluded-linked-account-list.csv"
+          EUC_ACCOUNT_IDS: !Ref EUCAccountIDs
     Metadata:
       cfn_nag:
         rules_to_suppress:

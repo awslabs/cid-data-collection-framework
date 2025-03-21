@@ -26,7 +26,7 @@ Parameters:
   Schedule:
     Type: String
     Description: EventBridge Schedule to trigger the data collection
-    Default: "rate(14 days)"
+    Default: "rate(1 day)"
   ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
@@ -62,11 +62,16 @@ Parameters:
     Type: String
     Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
     Default: ""
-
+  EUCAccountIDs:
+    Type: String
+    Description: "Comma-separated list of account IDs that user has identified to have WorkSpaces running, used to collect WorkSpaces metrics from. If left blank, metrics will be checked from all linked accounts in Organisation."
+    Default: ""
+    
 Conditions:
   NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
 
 Mappings:
+
   ServicesMap:
     OpensearchDomains:
       path: opensearch-domains
@@ -1077,6 +1082,39 @@ Mappings:
                 paths: WorkspaceId,UserName,ComputeType,DirectoryId,DirectoryName,DirectoryType,DirectoryAlias,DirectoryMaintenance,State,ConnectionStatus,LastConnected,LastInventoryRun,RunningMode,OperatingSystemName,Protocol,ComputerName,IPAddress,accountid,collection_date,region
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
           TableType: EXTERNAL_TABLE
+  
+  # EUCMap defines which services should have EUC (End User Computing) filtering enabled
+  # Used specifically for WorkSpaces inventory collection to filter accounts
+  # - enabled: "yes" means the service will only collect data from accounts specified in EUCAccountIDs parameter
+  # - enabled: "no" means the service will collect data from all accounts normally
+  # This mapping is used in conjunction with ServicesMap to control EUC filtering behavior
+  EUCMap:
+    WorkSpaces:
+      enabled: yes
+    OpensearchDomains:
+      enabled: no
+    ElasticacheClusters:
+      enabled: no
+    RdsDbClusters:
+      enabled: no
+    RdsDbInstances:
+      enabled: no
+    RdsDbSnapshots:
+      enabled: no
+    EBS:
+      enabled: no
+    AMI:
+      enabled: no
+    Snapshot:
+      enabled: no
+    Ec2Instances:
+      enabled: no
+    VpcInstances:
+      enabled: no
+    EKSClusters:
+      enabled: no
+    LambdaFunctions:
+      enabled: no
 
 Resources:
   LambdaRole:
@@ -1336,9 +1374,18 @@ Resources:
                       "Please do not trigger this Lambda manually."
                       "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
-              params = [p for p in event.get('params', '').split() if p]
-              name = params[0]
-
+              
+              # This section handles dict format
+              params = event.get('params', {})
+              if isinstance(params, dict):
+                  name = params.get('path')
+                  enable_euc_filtering = params.get('EnableEUCFiltering')
+              else:
+                  # Keep original handling for backward compatibility
+                  params = [p for p in event.get('params', '').split() if p]
+                  name = params[0]
+                  enable_euc_filtering = params[1] if len(params) > 1 else None
+        
               sub_modules = {
                   'opensearch-domains': opensearch_domains_scan, # special function for opensearch
                   'elasticache-clusters': partial(
@@ -1461,6 +1508,7 @@ Resources:
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
           REGIONS: !Ref RegionsInScope
+          EUC_ACCOUNT_IDS: !Ref EUCAccountIDs
 
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -1515,11 +1563,13 @@ Resources:
             ModuleLambdaARN: !GetAtt LambdaFunction.Arn
             Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-${AwsObject}-Crawler"]'
             CollectionType: "LINKED"
-            Params: !FindInMap [ServicesMap, !Ref AwsObject, path]
+            ServicePath: !FindInMap [ServicesMap, !Ref AwsObject, path]
+            EnableEUCValue: !FindInMap [EUCMap, !Ref AwsObject, enabled]
             Module: !Ref CFDataName
             DeployRegion: !Ref AWS::Region
             Account: !Ref AWS::AccountId
             Prefix: !Ref ResourcePrefix
+      
       'RefreshSchedule${AwsObject}':
         Type: AWS::Scheduler::Schedule
         Properties:
