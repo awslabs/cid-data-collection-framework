@@ -22,6 +22,11 @@ Parameters:
     Type: String
     Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
     Default: ""
+  EUCAccountIDs:
+    Type: String
+    Description: "Comma-separated list of account IDs that user has identified to have WorkSpaces running, used to collect WorkSpaces metrics from. If left blank, metrics will be checked from all linked accounts in Organization."
+    Default: ""
+
 Outputs:
   LambdaFunctionName:
     Value: !Ref LambdaFunction
@@ -136,6 +141,7 @@ Resources:
             LINKED_ACCOUNT_LIST_KEY = os.environ.get('LINKED_ACCOUNT_LIST_KEY')
             PAYER_ACCOUNT_LIST_KEY = os.environ.get('PAYER_ACCOUNT_LIST_KEY')
             EXCLUDED_ACCOUNT_LIST_KEY = os.environ.get('EXCLUDED_ACCOUNT_LIST_KEY')
+            EUC_ACCOUNTS = os.environ.get('EUC_ACCOUNT_IDS', '').strip()
             TMP_FILE = "/tmp/data.json"
 
             logger = logging.getLogger(__name__)
@@ -154,6 +160,7 @@ Resources:
 
                 functions = { # keep keys same as boto3 services
                     'linked': iterate_linked_accounts,
+                    'euc': iterate_euc_accounts,
                     'payers': partial(iterate_admins_accounts, None),
                     'organizations': partial(iterate_admins_accounts, 'organizations'),
                     'compute-optimizer': partial(iterate_admins_accounts, 'compute-optimizer'),
@@ -230,6 +237,17 @@ Resources:
                 except Exception as exc: #pylint: disable=broad-exception-caught
                     logger.error( f'{type(exc).__name__}: When trying to build linked account list. {exc} ')
 
+            def iterate_euc_accounts():
+                ''' same as iterate_linked_accounts but with additional filtering
+                '''
+                for acc in iterate_linked_accounts():
+                    account_id = acc['account']['account_id']
+                    if account_id in EUC_ACCOUNTS.split(',') or EUC_ACCOUNTS.strip() == '*':
+                        logger.info(f'Account {account_id} is EUC')
+                        yield acc
+                    else:
+                        logger.info(f'Account {account_id} is not EUC. Skipping')
+
             def get_defined_list(bucket, key):
                 s3 = boto3.client("s3")
                 exts = [".json", ".csv"]
@@ -285,6 +303,7 @@ Resources:
           LINKED_ACCOUNT_LIST_KEY: "account-list/linked-account-list.json"
           PAYER_ACCOUNT_LIST_KEY: "account-list/payer-account-list.json"
           EXCLUDED_ACCOUNT_LIST_KEY: "account-list/excluded-linked-account-list.csv"
+          EUC_ACCOUNT_IDS: !Ref EUCAccountIDs
     Metadata:
       cfn_nag:
         rules_to_suppress:

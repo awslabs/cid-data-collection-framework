@@ -26,7 +26,7 @@ Parameters:
   Schedule:
     Type: String
     Description: EventBridge Schedule to trigger the data collection
-    Default: "rate(14 days)"
+    Default: "rate(1 day)"
   ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
@@ -62,11 +62,12 @@ Parameters:
     Type: String
     Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
     Default: ""
-
+    
 Conditions:
   NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
 
 Mappings:
+
   ServicesMap:
     OpensearchDomains:
       path: opensearch-domains
@@ -197,7 +198,8 @@ Mappings:
           TableType: EXTERNAL_TABLE
 
     RdsDbClusters:
-      path: rds-db-clusters
+      path: rds
+      collection: LINKED-db-clusters
       table:
         - Name: inventory_rds_db_clusters_data
           TableType: EXTERNAL_TABLE
@@ -330,7 +332,8 @@ Mappings:
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
 
     RdsDbInstances:
-      path: rds-db-instances
+      path: rds
+      collection: LINKED-db-instances
       table:
         - Name: inventory_rds_db_instances_data
           TableType: EXTERNAL_TABLE
@@ -473,7 +476,8 @@ Mappings:
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
 
     RdsDbSnapshots:
-      path: rds-db-snapshots
+      path: rds
+      collection: LINKED-db-snapshots
       table:
         - Name: inventory_rds_db_snapshots_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -563,6 +567,7 @@ Mappings:
 
     EBS:
       path: ebs
+      collection: LINKED
       table:
         - Name: inventory_ebs_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -620,6 +625,7 @@ Mappings:
 
     AMI:
       path: ami
+      collection: LINKED
       table:
         - Name: inventory_ami_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -693,6 +699,7 @@ Mappings:
 
     Snapshot:
       path: snapshot
+      collection: LINKED
       table:
         - Name: inventory_snapshot_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -745,7 +752,8 @@ Mappings:
           TableType: EXTERNAL_TABLE
 
     Ec2Instances:
-      path: ec2-instances
+      path: ec2
+      collection: LINKED-instances
       table:
         - Name: inventory_ec2_instances_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -856,6 +864,7 @@ Mappings:
 
     VpcInstances:
       path: vpc
+      collection: LINKED
       table:
         - Name: inventory_vpc_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -902,6 +911,7 @@ Mappings:
           TableType: EXTERNAL_TABLE
     EKSClusters:
       path: eks
+      collection: LINKED
       table:
         - Name: inventory_eks_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -939,7 +949,8 @@ Mappings:
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
           TableType: EXTERNAL_TABLE
     LambdaFunctions:
-      path: lambda-functions
+      path: lambda
+      collection: LINKED-functions
       table:
         - Name: inventory_lambda_functions_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -1013,6 +1024,7 @@ Mappings:
 
     WorkSpaces:
       path: workspaces
+      collection: EUC # Specific for EUC
       table:
         - Name: inventory_workspaces_data
           Parameters:
@@ -1159,6 +1171,13 @@ Resources:
           TRACKING_TAGS = os.environ.get("TRACKING_TAGS")
           TAG_LIST = TRACKING_TAGS.split(",") if TRACKING_TAGS else []
 
+          # Define WorkSpaces supported regions :  curl https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonWorkSpaces/current/region_index.json -s | jq '.regions | keys'
+          WORKSPACES_REGIONS = [ "il-central-1", "af-south-1",
+              'us-east-1', 'us-west-2', 'ap-south-1', 'ap-northeast-2',
+              'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1', 'ca-central-1',
+              'eu-central-1', 'eu-west-1', 'eu-west-2', 'sa-east-1'
+          ]
+
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
@@ -1266,11 +1285,6 @@ Resources:
 
           def workspaces_scan(account_id, region):
               """Special function to scan AWS WorkSpaces resources"""
-              # Define WorkSpaces supported regions
-              WORKSPACES_REGIONS = [
-                  'us-east-1', 'us-west-2', 'ap-south-1', 'ap-northeast-2', 
-                  'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1', 'ca-central-1',
-                  'eu-central-1', 'eu-west-1', 'eu-west-2', 'sa-east-1']
               # Skip if region is not supported by WorkSpaces
               if region not in WORKSPACES_REGIONS:
                   logger.info(f"WorkSpaces not supported in region {region}. Skipping.")
@@ -1336,8 +1350,6 @@ Resources:
                       "Please do not trigger this Lambda manually."
                       "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
-              params = [p for p in event.get('params', '').split() if p]
-              name = params[0]
 
               sub_modules = {
                   'opensearch-domains': opensearch_domains_scan, # special function for opensearch
@@ -1514,12 +1526,13 @@ Resources:
             AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
             ModuleLambdaARN: !GetAtt LambdaFunction.Arn
             Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-${AwsObject}-Crawler"]'
-            CollectionType: "LINKED"
-            Params: !FindInMap [ServicesMap, !Ref AwsObject, path]
+            CollectionType: !FindInMap [ServicesMap, !Ref AwsObject, collection]
+            ServicePath: !FindInMap [ServicesMap, !Ref AwsObject, path]
             Module: !Ref CFDataName
             DeployRegion: !Ref AWS::Region
             Account: !Ref AWS::AccountId
             Prefix: !Ref ResourcePrefix
+
       'RefreshSchedule${AwsObject}':
         Type: AWS::Scheduler::Schedule
         Properties:
@@ -1930,15 +1943,15 @@ Resources:
               gp3_gb_cost + gp3_iops_cost + gp3_throughput_cost AS gp3_total_cost,
               (current_gb_cost + current_iops_cost) - (gp3_gb_cost + gp3_iops_cost + gp3_throughput_cost) as gp3_saving
           FROM inventory_ebs_data
-  
-  EUCInventoryView:
+
+  WorkspacesInventoryView:
     Type: AWS::Athena::NamedQuery
     Properties:
       Database: !Ref DatabaseName
       Description: EUC Inventory View for WorkSpaces inventory data
-      Name: create_euc_inventory_view
+      Name: workspaces_view
       QueryString: !Sub |
-        CREATE OR REPLACE VIEW "euc_inventory_view" AS
+        CREATE OR REPLACE VIEW "workspaces_view" AS
           SELECT
           "workspaceid"
           , "username"
