@@ -57,9 +57,6 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
-  EUCAccountIDs:
-    Type: String
-    Description: "Optional comma-separated list of account IDs to collect WorkSpaces metrics from. If left blank, metrics will be checked from all linked accounts in Organisation."
 
 Outputs:
   StepFunctionARN:
@@ -479,29 +476,11 @@ Resources:
           def lambda_handler(event, context):
               logger.info(f"Event: {event}")
               try:
-                  params = event.get('params', {})
-                  is_euc_filtering = (isinstance(params, dict) and 
-                                    params.get('EnableEUCFiltering', '').lower() in ['yes', 'true'])
-
                   account = json.loads(event["account"])
                   account_id = account["account_id"]
                   payer_id = account["payer_id"]
                   logger.info(f"Collecting data for account from event: {account_id}")
-
-                  if is_euc_filtering:
-                      euc_accounts = os.environ.get('EUC_ACCOUNT_IDS', '').strip()
-                      if euc_accounts:
-                          euc_account_list = [acc.strip() for acc in euc_accounts.split(',')]
-                          logger.info(f"EUC accounts list: {euc_account_list}")
-                          if account_id not in euc_account_list:
-                              logger.info(f"Account {account_id} not in EUC accounts list - skipping")
-                              return "Skipped - not in EUC accounts list"
-                          logger.info(f"Account {account_id} in EUC accounts list - processing")
-                      else:
-                          logger.info("EUC filtering enabled but no EUC_ACCOUNT_IDS specified - processing all accounts")
-                  
                   process_account(account_id, payer_id)
-
               except Exception as e:
                   logger.error(f"Error processing account from event: {str(e)}")
                   raise
@@ -562,7 +541,6 @@ Resources:
           ROLENAME: !Ref MultiAccountRoleName
           REGIONS: !Ref RegionsInScope
           ROLE_SESSION_NAME: data_collection
-          EUC_ACCOUNT_IDS: !Ref EUCAccountIDs
 
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -593,9 +571,7 @@ Resources:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
-        CollectionType: "LINKED"
-        ServicePath: "workspaces"
-        EnableEUCValue: "yes" 
+        CollectionType: "EUC"
         Module: !Ref CFDataName
         DeployRegion: !Ref AWS::Region
         Account: !Ref AWS::AccountId
@@ -626,9 +602,9 @@ Resources:
     Properties:
       Database: !Ref DatabaseName
       Description: Provides WorkSpaces Metrics info
-      Name: !Sub ${ResourcePrefix}view euc_cwmetrics_view
+      Name: !Sub ${ResourcePrefix}view workspaces_metrics_view
       QueryString: !Sub
-        CREATE OR REPLACE VIEW "euc_cwmetrics_view" AS
+        CREATE OR REPLACE VIEW "workspaces_metrics_view" AS
           SELECT
           "WorkspaceId" , "UserName" , "State" , "BundleId" , "DirectoryId" ,
           "ComputerName" , "RunningMode" , "RootVolumeSizeGib" ,
