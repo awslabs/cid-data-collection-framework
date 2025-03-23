@@ -138,8 +138,6 @@ Resources:
             MANAGEMENT_ACCOUNT_IDS = os.environ.get('MANAGEMENT_ACCOUNT_IDS')
             BUCKET = os.environ.get('BUCKET_NAME')
             PREDEF_ACCOUNT_LIST_KEY = os.environ.get('PREDEF_ACCOUNT_LIST_KEY')
-            LINKED_ACCOUNT_LIST_KEY = os.environ.get('LINKED_ACCOUNT_LIST_KEY')
-            PAYER_ACCOUNT_LIST_KEY = os.environ.get('PAYER_ACCOUNT_LIST_KEY')
             EXCLUDED_ACCOUNT_LIST_KEY = os.environ.get('EXCLUDED_ACCOUNT_LIST_KEY')
             EUC_ACCOUNTS = os.environ.get('EUC_ACCOUNT_IDS', '').strip()
             TMP_FILE = "/tmp/data.json"
@@ -160,7 +158,7 @@ Resources:
 
                 functions = { # keep keys same as boto3 services
                     'linked': iterate_linked_accounts,
-                    'euc': iterate_euc_accounts,
+                    'euc': partial(iterate_accounts_with_filter, EUC_ACCOUNTS),
                     'payers': partial(iterate_admins_accounts, None),
                     'organizations': partial(iterate_admins_accounts, 'organizations'),
                     'compute-optimizer': partial(iterate_admins_accounts, 'compute-optimizer'),
@@ -184,7 +182,7 @@ Resources:
                 if count == 0:
                     raise Exception('No accounts found. Check the log.') #pylint: disable=broad-exception-raised
 
-                key = LINKED_ACCOUNT_LIST_KEY if account_type == 'linked' else PAYER_ACCOUNT_LIST_KEY
+                key = f"account-list/{account_type}-account-list.json"
                 s3 = boto3.client('s3')
                 s3.upload_file(TMP_FILE, Bucket=BUCKET, Key=key)
 
@@ -203,7 +201,7 @@ Resources:
                         try:
                             account_id = ssm.get_parameter(Name=ssm_key)['Parameter']['Value']
                         except ssm.exceptions.ParameterNotFound:
-                            logger.warning(f'Not found ssm parameter {ssm_key}. Will use Management Account Id {payer_id}')
+                            logger.info(f'Not found ssm parameter {ssm_key}. Will use Management Account Id {payer_id}')
                     yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id})}
 
             def iterate_linked_accounts():
@@ -237,16 +235,14 @@ Resources:
                 except Exception as exc: #pylint: disable=broad-exception-caught
                     logger.error( f'{type(exc).__name__}: When trying to build linked account list. {exc} ')
 
-            def iterate_euc_accounts():
+            def iterate_accounts_with_filter(filter_accounts):
                 ''' same as iterate_linked_accounts but with additional filtering
+                filter_accounts: a comma separated list of accounts OR '*'
                 '''
                 for acc in iterate_linked_accounts():
-                    account_id = acc['account']['account_id']
-                    if account_id in EUC_ACCOUNTS.split(',') or EUC_ACCOUNTS.strip() == '*':
-                        logger.info(f'Account {account_id} is EUC')
+                    account_id = json.loads(acc['account'])['account_id']
+                    if account_id in filter_accounts.split(',') or filter_accounts.strip() == '*':
                         yield acc
-                    else:
-                        logger.info(f'Account {account_id} is not EUC. Skipping')
 
             def get_defined_list(bucket, key):
                 s3 = boto3.client("s3")
@@ -300,8 +296,6 @@ Resources:
           RESOURCE_PREFIX: !Ref ResourcePrefix
           BUCKET_NAME: !Ref DestinationBucket
           PREDEF_ACCOUNT_LIST_KEY: "account-list/account-list"
-          LINKED_ACCOUNT_LIST_KEY: "account-list/linked-account-list.json"
-          PAYER_ACCOUNT_LIST_KEY: "account-list/payer-account-list.json"
           EXCLUDED_ACCOUNT_LIST_KEY: "account-list/excluded-linked-account-list.csv"
           EUC_ACCOUNT_IDS: !Ref EUCAccountIDs
     Metadata:

@@ -1297,8 +1297,8 @@ Resources:
                   # Get WorkSpaces data
                   workspaces_data = list(client.get_paginator('describe_workspaces').paginate().search('Workspaces[*]'))
                   if not workspaces_data:
-                    logger.info(f"No WorkSpaces found in {account_id}/{region}")
-                    return
+                      logger.info(f"No WorkSpaces found in {account_id}/{region}")
+                      return
                   # Get connection status and directories for lookup
                   connection_status = client.describe_workspaces_connection_status()['WorkspacesConnectionStatus']
                   directories = client.describe_workspace_directories()['Directories']
@@ -1417,7 +1417,8 @@ Resources:
                   'eks': eks_clusters_scan,
                   'workspaces': workspaces_scan
               }
-
+              params = [p for p in event.get('params', '').split() if p]
+              name = params[0]
               account = json.loads(event["account"])
               account_id = account["account_id"]
               payer_id = account["payer_id"]
@@ -1529,6 +1530,7 @@ Resources:
             ModuleLambdaARN: !GetAtt LambdaFunction.Arn
             Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-${AwsObject}-Crawler"]'
             CollectionType: !FindInMap [ServicesMap, !Ref AwsObject, collection]
+            Params: !FindInMap [ServicesMap, !Ref AwsObject, path]
             Module: !Ref CFDataName
             DeployRegion: !Ref AWS::Region
             Account: !Ref AWS::AccountId
