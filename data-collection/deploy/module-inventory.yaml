@@ -1300,45 +1300,45 @@ Resources:
                       logger.info(f"No WorkSpaces found in {account_id}/{region}")
                       return
                   # Get connection status and directories for lookup
-                  connection_status = client.describe_workspaces_connection_status()['WorkspacesConnectionStatus']
-                  directories = client.describe_workspace_directories()['Directories']
+                  connection_status = list(client.get_paginator('describe_workspaces_connection_status').paginate().search('WorkspacesConnectionStatus'))
+                  directories = list(workspaces.get_paginator('describe_workspace_directories').paginate().search('Directories'))
                   # Create lookup dictionaries
                   connection_lookup = {conn['WorkspaceId']: conn for conn in connection_status}
                   directory_lookup = {d['DirectoryId']: d for d in directories}
                   # Process workspaces
                   for workspace in workspaces_data:
-                    workspace_id = workspace['WorkspaceId']
-                    dir_id = workspace['DirectoryId']
-            
-                    connection_info = connection_lookup.get(workspace_id, {})
-                    dir_info = directory_lookup.get(dir_id, {})
-            
-                    workspace_info = {
-                        'accountid': account_id,
-                        'region': region,
-                        'ResourceType': 'WorkSpace',
-                        'WorkspaceId': workspace_id,
-                        'UserName': workspace['UserName'],
-                        'DirectoryId': dir_id,
-                        'State': workspace['State'],
-                        'ConnectionStatus': connection_info.get('ConnectionState', 'N/A'),
-                        'LastConnected': connection_info.get('LastKnownUserConnectionTimestamp', 'Never').strftime('%x %X') if isinstance(connection_info.get('LastKnownUserConnectionTimestamp'), datetime) else "01/01/01 00:00:00",
-                        'LastInventoryRun': time.strftime('%x %X'),
-                        'RunningMode': workspace.get("WorkspaceProperties", {}).get("RunningMode", "N/A"),
-                        'ComputeType': workspace.get("WorkspaceProperties", {}).get("ComputeTypeName", "N/A"),
-                        'OperatingSystem': workspace.get("WorkspaceProperties", {}).get("OperatingSystemName", "N/A"),
-                        'Protocol': ''.join(
-                            c for c in str(workspace.get("WorkspaceProperties", {}).get("Protocols", "N/A")) 
-                            if c.isalnum() or c.isspace()
-                        ),
-                        'DirectoryName': dir_info.get('DirectoryName', 'N/A'),
-                        'DirectoryAlias': dir_info.get('Alias', 'N/A'),
-                        'DirectoryType': dir_info.get('DirectoryType', 'N/A'),
-                        'DirectoryMaintenance': dir_info.get("WorkspaceCreationProperties", {}).get("EnableMaintenanceMode", "N/A"),
-                        'ComputerName': workspace.get("ComputerName", ""),
-                        'IPAddress': workspace.get("IpAddress", "")
-                    }            
-                    yield workspace_info
+                      workspace_id = workspace['WorkspaceId']
+                      dir_id = workspace['DirectoryId']
+
+                      connection_info = connection_lookup.get(workspace_id, {})
+                      dir_info = directory_lookup.get(dir_id, {})
+
+                      workspace_info = {
+                          'accountid': account_id,
+                          'region': region,
+                          'ResourceType': 'WorkSpace',
+                          'WorkspaceId': workspace_id,
+                          'UserName': workspace['UserName'],
+                          'DirectoryId': dir_id,
+                          'State': workspace['State'],
+                          'ConnectionStatus': connection_info.get('ConnectionState', 'N/A'),
+                          'LastConnected': connection_info.get('LastKnownUserConnectionTimestamp').strftime('%x %X') if isinstance(connection_info.get('LastKnownUserConnectionTimestamp'), datetime) else "01/01/01 00:00:00",
+                          'LastInventoryRun': time.strftime('%x %X'),
+                          'RunningMode': workspace.get("WorkspaceProperties", {}).get("RunningMode", "N/A"),
+                          'ComputeType': workspace.get("WorkspaceProperties", {}).get("ComputeTypeName", "N/A"),
+                          'OperatingSystem': workspace.get("WorkspaceProperties", {}).get("OperatingSystemName", "N/A"),
+                          'Protocol': ''.join(
+                              c for c in str(workspace.get("WorkspaceProperties", {}).get("Protocols", "N/A"))
+                              if c.isalnum() or c.isspace()
+                          ),
+                          'DirectoryName': dir_info.get('DirectoryName', 'N/A'),
+                          'DirectoryAlias': dir_info.get('Alias', 'N/A'),
+                          'DirectoryType': dir_info.get('DirectoryType', 'N/A'),
+                          'DirectoryMaintenance': dir_info.get("WorkspaceCreationProperties", {}).get("EnableMaintenanceMode", "N/A"),
+                          'ComputerName': workspace.get("ComputerName", ""),
+                          'IPAddress': workspace.get("IpAddress", "")
+                      }
+                      yield workspace_info
               except Exception as exc:
                   logger.error(f"Cannot get WorkSpaces info from {account_id}/{region}: {type(exc)}-{exc}")
 
@@ -1352,6 +1352,9 @@ Resources:
                       "Please do not trigger this Lambda manually."
                       "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
+
+              params = [p for p in event.get('params', '').split() if p]
+              name = params[0]
 
               sub_modules = {
                   'opensearch-domains': opensearch_domains_scan, # special function for opensearch
@@ -1417,8 +1420,6 @@ Resources:
                   'eks': eks_clusters_scan,
                   'workspaces': workspaces_scan
               }
-              params = [p for p in event.get('params', '').split() if p]
-              name = params[0]
               account = json.loads(event["account"])
               account_id = account["account_id"]
               payer_id = account["payer_id"]
