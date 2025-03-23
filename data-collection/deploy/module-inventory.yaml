@@ -1301,7 +1301,7 @@ Resources:
                       return
                   # Get connection status and directories for lookup
                   connection_status = list(client.get_paginator('describe_workspaces_connection_status').paginate().search('WorkspacesConnectionStatus'))
-                  directories = list(workspaces.get_paginator('describe_workspace_directories').paginate().search('Directories'))
+                  directories = list(client.get_paginator('describe_workspace_directories').paginate().search('Directories'))
                   # Create lookup dictionaries
                   connection_lookup = {conn['WorkspaceId']: conn for conn in connection_status}
                   directory_lookup = {d['DirectoryId']: d for d in directories}
