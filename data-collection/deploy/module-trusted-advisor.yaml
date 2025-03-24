@@ -138,10 +138,10 @@ Resources:
 
           #config to avoid ThrottlingException
           config = Config(
-            retries = {
-                'max_attempts': 10,
-                'mode': 'standard'
-            }
+              retries = {
+                  'max_attempts': 10,
+                  'mode': 'standard'
+              }
           )
 
           logger = logging.getLogger(__name__)
@@ -159,31 +159,25 @@ Resources:
                   account_id = account["account_id"]
                   account_name = account["account_name"]
                   payer_id = account["payer_id"]
-                  logger.info(f"Collecting data for account: {account_id}")
-                  read_ta(account_id, account_name)
-                  upload_to_s3(account_id, payer_id, "data")
-                  # TA Priority Recommendations
-                  trustedadvisor = assume_role(account_id, "trustedadvisor", REGIONS[0], ROLE_NAME)
-                  recommendations = (trustedadvisor
-                         .get_paginator('list_recommendations')
-                         .paginate(type='priority')
-                         .search('recommendationSummaries[]')
-                        )
-                  write_to_file(account_id, account_name, payer_id, list(recommendations))
-                  upload_to_s3(account_id, payer_id, "priority-data")
+
+                  logger.info(f"Collecting TA for account: {account_id}")
+                  filename = read_ta(account_id, account_name)
+                  upload_to_s3(account_id, payer_id, "data", filename)
+
+                  logger.info(f"Collecting TA Priority for account: {account_id}")
+                  filename = read_ta_priority(account_id, account_name, payer_id)
+                  upload_to_s3(account_id, payer_id, "priority-data", filename)
+
               except Exception as e:
                   logging.warning(e)
 
-          def upload_to_s3(account_id, payer_id, suffix):
-              d = datetime.now()
-              month = d.strftime("%m")
-              year = d.strftime("%Y")
-              _date = d.strftime("%d%m%Y-%H%M%S")
-              key = f"{PREFIX}/{PREFIX}-{suffix}/payer_id={payer_id}/year={year}/month={month}/{PREFIX}-{account_id}-{_date}.json"
-              tmp_file = TMP_FILE if suffix == "data" else TMP_FILE_Priority
+          def upload_to_s3(account_id, payer_id, suffix, tmp_file):
+              key = datetime.now().strftime(
+                  f"{PREFIX}/{PREFIX}-{suffix}/payer_id={payer_id}/year=%Y/month=%m/{PREFIX}-{account_id}-%d%m%Y-%H%M%S.json"
+              )
 
               if os.path.getsize(tmp_file) == 0:
-                  print(f"No data in file for {PREFIX}{'-' + suffix if suffix != 'data' else ''}")
+                  print(f"No data in file for {tmp_file}")
                   return
         
               try:
@@ -236,31 +230,37 @@ Resources:
                           f.write(json.dumps(output, default=_json_serial) + "\n")
                   except Exception as e:
                       print(f'{type(e)}: {e}')
+              return TMP_FILE
 
-          def format_datetime(date_value, default='N/A'):
-              """
-              Converts a datetime value to ISO format string.
+          def _isoformat(date_value, default='N/A'):
+              """ Converts a datetime value to ISO format string.
               """
               return date_value.isoformat() if isinstance(date_value, datetime) else default
 
-          def write_to_file(account_id, account_name, payer_id, recommendations: List[Dict]):
-              """
-              Write recommendations and their resources to a file
+          def read_ta_priority(account_id, account_name, payer_id):
+              """ Read recommendations and write to a file
               """
               trustedadvisor = assume_role(account_id, "trustedadvisor", REGIONS[0], ROLE_NAME)
               try:
+                  recommendations = (trustedadvisor
+                      .get_paginator('list_recommendations')
+                      .paginate(type='priority')
+                      .search('recommendationSummaries[]')
+                  )
                   with open(TMP_FILE_Priority, 'w', encoding='utf-8') as jsonfile:
                       for recommendation in recommendations:
                           # Get recommendation details including resolved date
-                          recommendation_details = trustedadvisor.get_recommendation(recommendationIdentifier=recommendation['arn']).get('recommendation', {})
-
+                          recommendation_details = (trustedadvisor
+                              .get_recommendation(recommendationIdentifier=recommendation['arn'])
+                              .get('recommendation', {})
+                          )
                           # Get resources for this recommendation
                           try:
                               resources = list(trustedadvisor
-                                    .get_paginator('list_recommendation_resources')
-                                    .paginate(recommendationIdentifier=recommendation['arn'])
-                                    .search('recommendationResourceSummaries[]')
-                                    )
+                                  .get_paginator('list_recommendation_resources')
+                                  .paginate(recommendationIdentifier=recommendation['arn'])
+                                  .search('recommendationResourceSummaries[]')
+                              )
                           except Exception as e:
                               print(f"Error getting resources for recommendation {recommendation['arn']}: {str(e)}")
                               resources = []
@@ -271,9 +271,9 @@ Resources:
                               'name': recommendation['name'],
                               'description': recommendation_details['description'],
                               'awsServices': recommendation.get('awsServices', 'N/A'),
-                              'createdAt': format_datetime(recommendation['createdAt']),
-                              'resolvedAt': format_datetime(recommendation_details['resolvedAt']),
-                              'lastUpdatedAt': format_datetime(recommendation['lastUpdatedAt']),
+                              'createdAt': _isoformat(recommendation['createdAt']),
+                              'resolvedAt': _isoformat(recommendation_details['resolvedAt']),
+                              'lastUpdatedAt': _isoformat(recommendation['lastUpdatedAt']),
                               'lifecycleStage': recommendation['lifecycleStage'],
                               'recommendationStatus': recommendation['status'],
                               'pillars': recommendation['pillars'],
@@ -281,30 +281,20 @@ Resources:
                               'accountID': account_id,
                               'accountName': account_name
                           }
-                          # If no resources found
-                          if not resources:
-                              rec_data.update({
-                                  'awsResourceId': 'N/A',
-                                  'exclusionStatus': 'N/A',
-                                  'regionCode': 'N/A',
-                                  'resourceStatus': 'N/A'
+                          for resource in (resources or [{}]):
+                              resource_data = rec_data.copy()
+                              resource_data.update({
+                                  'awsResourceId': resource.get('awsResourceId', 'N/A'),
+                                  'exclusionStatus': resource.get('exclusionStatus', 'N/A'),
+                                  'regionCode': resource.get('regionCode', 'N/A'),
+                                  'resourceStatus': resource.get('status', 'N/A')
                               })
-                              jsonfile.write(json.dumps(rec_data) + '\n')
-                          else:
-                              # Add entry for each resource
-                              for resource in resources:
-                                  resource_data = rec_data.copy()
-                                  resource_data.update({
-                                      'awsResourceId': resource.get('awsResourceId', 'N/A'),
-                                      'exclusionStatus': resource.get('exclusionStatus', 'N/A'),
-                                      'regionCode': resource.get('regionCode', 'N/A'),
-                                      'resourceStatus': resource.get('status', 'N/A')
-                                  })
-                                  jsonfile.write(json.dumps(resource_data) + '\n')
+                              jsonfile.write(json.dumps(resource_data) + '\n')
 
               except Exception as e:
-                  print(f"Error writing to JSON: {str(e)}")
+                  print(f"Error processing TA-Priority: {str(e)}")
                   raise
+              return TMP_FILE_Priority
 
 
       Handler: 'index.lambda_handler'
