@@ -126,7 +126,6 @@ Resources:
           from typing import List, Dict
           import boto3
           from botocore.client import Config
-          from botocore.exceptions import ClientError
           import logging
 
           PREFIX = os.environ["PREFIX"]
@@ -164,8 +163,13 @@ Resources:
                   read_ta(account_id, account_name)
                   upload_to_s3(account_id, payer_id, "data")
                   # TA Priority Recommendations
-                  recommendations = get_priority_recommendations(account_id)
-                  write_to_file(account_id, account_name, payer_id, recommendations)
+                  trustedadvisor = assume_role(account_id, "trustedadvisor", REGIONS[0], ROLE_NAME)
+                  recommendations = (trustedadvisor
+                         .get_paginator('list_recommendations')
+                         .paginate(type='priority')
+                         .search('recommendationSummaries[]')
+                        )
+                  write_to_file(account_id, account_name, payer_id, list(recommendations))
                   upload_to_s3(account_id, payer_id, "priority-data")
               except Exception as e:
                   logging.warning(e)
@@ -233,69 +237,11 @@ Resources:
                   except Exception as e:
                       print(f'{type(e)}: {e}')
 
-          def get_priority_recommendations(account_id) -> List[Dict]:
+          def format_datetime(date_value, default='N/A'):
               """
-              Fetch all priority recommendations using pagination
+              Converts a datetime value to ISO format string.
               """
-              recommendations = []
-              next_token = None
-              trustedadvisor = assume_role(account_id, "trustedadvisor", REGIONS[0], ROLE_NAME)
-              try:
-                  while True:
-                      params = {'type': 'priority'}
-                      if next_token:
-                          params['nextToken'] = next_token
-                      response = trustedadvisor.list_recommendations(**params)
-                      if 'recommendationSummaries' in response:
-                          recommendations.extend(response['recommendationSummaries'])
-                      if 'nextToken' not in response:
-                          break
-                      next_token = response['nextToken']
-                  return recommendations
-              except trustedadvisor.exceptions.ClientError as e:
-                  print(f"Error fetching recommendations: {str(e)}")
-                  raise
-      
-          def get_recommendation_details(trustedadvisor, recommendation_arn: str) -> Dict:
-              """
-              Get detailed information about a recommendation
-              """
-              try:
-                  response = trustedadvisor.get_recommendation(
-                      recommendationIdentifier=recommendation_arn
-                  )
-                  return response.get('recommendation', {})
-              except trustedadvisor.exceptions.ClientError as e:
-                  print(f"Error getting recommendation details for {recommendation_arn}: {str(e)}")
-                  raise
-      
-          def get_resource_summaries(trustedadvisor,recommendation_id: str) -> List[Dict]:
-              """
-              Fetch resource summaries for a given recommendation ID using pagination
-              """
-              resources = []
-              next_token = None
-              try:
-                  while True:
-                      params = {'recommendationIdentifier': recommendation_id}
-                      if next_token:
-                          params['nextToken'] = next_token
-                      
-                      response = trustedadvisor.list_recommendation_resources(**params)
-                      
-                      if 'recommendationResourceSummaries' in response:
-                          resources.extend(response['recommendationResourceSummaries'])
-                      
-                      if 'nextToken' not in response:
-                          break
-                          
-                      next_token = response['nextToken']
-                      
-                  return resources
-              
-              except trustedadvisor.exceptions.ClientError as e:
-                  print(f"Error fetching resource summaries for recommendation {recommendation_id}: {str(e)}")
-                  raise
+              return date_value.isoformat() if isinstance(date_value, datetime) else default
 
           def write_to_file(account_id, account_name, payer_id, recommendations: List[Dict]):
               """
@@ -305,19 +251,18 @@ Resources:
               try:
                   with open(TMP_FILE_Priority, 'w', encoding='utf-8') as jsonfile:
                       for recommendation in recommendations:
-                          rec_id = recommendation['id']
-                          rec_creation_date = recommendation['createdAt'].isoformat() if isinstance(recommendation['createdAt'], datetime) else 'N/A'
-                          rec_lastupdated_date = recommendation['lastUpdatedAt'].isoformat() if isinstance(recommendation['lastUpdatedAt'], datetime) else 'N/A'
-                          
                           # Get recommendation details including resolved date
-                          recommendation_details = get_recommendation_details(trustedadvisor, recommendation['arn'])
-                          rec_resolved_date = recommendation_details['resolvedAt'].isoformat() if isinstance(recommendation_details['resolvedAt'], datetime) else 'N/A'
+                          recommendation_details = trustedadvisor.get_recommendation(recommendationIdentifier=recommendation['arn']).get('recommendation', {})
 
                           # Get resources for this recommendation
                           try:
-                              resources = get_resource_summaries(trustedadvisor, recommendation['arn'])
+                              resources = list(trustedadvisor
+                                    .get_paginator('list_recommendation_resources')
+                                    .paginate(recommendationIdentifier=recommendation['arn'])
+                                    .search('recommendationResourceSummaries[]')
+                                    )
                           except Exception as e:
-                              print(f"Error getting resources for recommendation {rec_id}: {str(e)}")
+                              print(f"Error getting resources for recommendation {recommendation['arn']}: {str(e)}")
                               resources = []
                           
                           # Base recommendation data
@@ -326,9 +271,9 @@ Resources:
                               'name': recommendation['name'],
                               'description': recommendation_details['description'],
                               'awsServices': recommendation.get('awsServices', 'N/A'),
-                              'createdAt': rec_creation_date,
-                              'resolvedAt': rec_resolved_date,
-                              'lastUpdatedAt': rec_lastupdated_date,
+                              'createdAt': format_datetime(recommendation['createdAt']),
+                              'resolvedAt': format_datetime(recommendation_details['resolvedAt']),
+                              'lastUpdatedAt': format_datetime(recommendation['lastUpdatedAt']),
                               'lifecycleStage': recommendation['lifecycleStage'],
                               'recommendationStatus': recommendation['status'],
                               'pillars': recommendation['pillars'],
@@ -446,6 +391,8 @@ Resources:
           Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-priority-data/"
           InputFormat: org.apache.hadoop.mapred.TextInputFormat
           OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Parameters:
+              UPDATED_BY_CRAWLER: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
           SerdeInfo:
             SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
             Parameters:
