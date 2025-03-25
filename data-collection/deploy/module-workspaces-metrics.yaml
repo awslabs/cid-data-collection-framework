@@ -1,6 +1,5 @@
-# CID Module - WorkSpaces CloudWatch Metrics
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Retrieves Inventory data for the chosen service
+Description: Retrieves CloudWatch metrics for WorkSpaces
 Transform: AWS::LanguageExtensions
 Parameters:
   DatabaseName:
@@ -9,7 +8,7 @@ Parameters:
     Default: optimization_data
   DataBucketsKmsKeysArns:
     Type: String
-    Description: KMS Key ARNs used for encrypting data in S3 buckets (comma separated)    
+    Description: KMS Key ARNs used for encrypting data in S3 buckets (comma separated)
   DestinationBucket:
     Type: String
     Description: Name of the S3 Bucket to be created to hold data information
@@ -31,7 +30,7 @@ Parameters:
   Schedule:
     Type: String
     Description: EventBridge Schedule to trigger the data collection
-    Default: rate(7 day)
+    Default: "rate(1 day)"
   ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you
@@ -58,10 +57,6 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
-  EUCAccountIDs:
-    Type: String
-    Description: "Optional comma-separated list of account IDs to collect WorkSpaces metrics from. If left blank, metrics will be checked from all linked accounts in Organisation."
-    Default: ""
 
 Outputs:
   StepFunctionARN:
@@ -69,10 +64,7 @@ Outputs:
     Value: !GetAtt ModuleStepFunction.Arn
 
 Conditions:
-  NeedDataBucketsKms: !Not
-    - !Equals
-      - !Ref DataBucketsKmsKeysArns
-      - ''
+  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, '' ] ]
 
 Resources:
   WorkSpacesMetricsTable:
@@ -81,7 +73,7 @@ Resources:
       CatalogId: !Ref AWS::AccountId
       DatabaseName: !Ref DatabaseName
       TableInput:
-        Name: inventory_workspaces_metrics_data
+        Name: workspaces_metrics_data
         StorageDescriptor:
           Columns:
             - Name: WorkspaceId
@@ -127,7 +119,7 @@ Resources:
             - Name: UpTime
               Type: int
           InputFormat: org.apache.hadoop.mapred.TextInputFormat
-          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/workspaces-metrics-data/"
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
           OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
           SerdeInfo:
             SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
@@ -231,7 +223,6 @@ Resources:
           METRIC_NAMESPACE = 'AWS/WorkSpaces'
           METRIC_PERIOD = 3600
           BATCH_SIZE = 100  # Number of workspaces to process in each batch
-          EUC_ACCOUNT_IDS = os.environ.get('EUC_ACCOUNT_IDS', '')
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -274,7 +265,6 @@ Resources:
                   "BundleId": workspace.get("BundleId", ""),
                   "DirectoryId": workspace.get("DirectoryId", ""),
                   "ComputerName": workspace.get("ComputerName", ""),
-                  "WorkspaceProperties": workspace.get("WorkspaceProperties", {})
               }
               # Flatten WorkspaceProperties into individual columns
               if "WorkspaceProperties" in workspace:
@@ -286,11 +276,11 @@ Resources:
                   output["UserVolumeSizeGib"] = props.get("UserVolumeSizeGib", 0)
                   output["ComputeTypeName"] = props.get("ComputeTypeName", "")
                   output["OperatingSystemName"] = props.get("OperatingSystemName", "")
-                  
+
                   # Handle the Protocols array
                   if "Protocols" in props:
                       output["Protocols"] = ",".join(props.get("Protocols", []))
-          
+
               tags = {}
               filtered_tags = {}
               if "Tags" in workspace:
@@ -485,55 +475,15 @@ Resources:
 
           def lambda_handler(event, context):
               logger.info(f"Event: {event}")
-
-              # Check if we're using specific EUC accounts or processing from the event
-              if EUC_ACCOUNT_IDS and EUC_ACCOUNT_IDS.strip():
-                  # Process specific accounts provided in the environment variable
-                  euc_accounts = [account.strip() for account in EUC_ACCOUNT_IDS.split(',') if account.strip()]
-                  logger.info(f"Using specific EUC accounts: {euc_accounts}")
-                
-                  # Get the payer_id from the event if available, otherwise use a default
-                  payer_id = "unknown"
-                  if 'account' in event:
-                      try:
-                          account = json.loads(event["account"])
-                          payer_id = account.get("payer_id", "unknown")
-                      except:
-                          pass
-                  
-              # Process accounts in parallel with a thread pool
-                  with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(euc_accounts))) as executor:
-                      future_to_account = {
-                          executor.submit(process_account, account_id, payer_id): account_id 
-                          for account_id in euc_accounts
-                      }
-                
-                      for future in concurrent.futures.as_completed(future_to_account):
-                          account_id = future_to_account[future]
-                          try:
-                              future.result()
-                              logger.info(f"Successfully processed account {account_id}")
-                          except Exception as e:
-                              logger.error(f"Error processing account {account_id}: {str(e)}")
-        
-              elif 'account' in event:
-                  # Process the account from the event (original behavior)
-                  try:
-                      account = json.loads(event["account"])
-                      account_id = account["account_id"]
-                      payer_id = account["payer_id"]
-                      logger.info(f"Collecting data for account from event: {account_id}")
-                      process_account(account_id, payer_id)
-                  except Exception as e:
-                      logger.error(f"Error processing account from event: {str(e)}")
-                      raise
-              else:
-                  raise ValueError(
-                      "Please do not trigger this Lambda manually. "
-                      "Find the corresponding state machine in Step Functions and Trigger from there, "
-                      "or specify EUC_ACCOUNT_IDS environment variable."
-                  )
-              
+              try:
+                  account = json.loads(event["account"])
+                  account_id = account["account_id"]
+                  payer_id = account["payer_id"]
+                  logger.info(f"Collecting data for account from event: {account_id}")
+                  process_account(account_id, payer_id)
+              except Exception as e:
+                  logger.error(f"Error processing account from event: {str(e)}")
+                  raise
               return "Successful"
 
           def process_account(account_id, payer_id):
@@ -591,7 +541,6 @@ Resources:
           ROLENAME: !Ref MultiAccountRoleName
           REGIONS: !Ref RegionsInScope
           ROLE_SESSION_NAME: data_collection
-          EUC_ACCOUNT_IDS: !Ref EUCAccountIDs
 
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -622,8 +571,7 @@ Resources:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
-        CollectionType: Payers
-        Params: ''
+        CollectionType: "EUC"
         Module: !Ref CFDataName
         DeployRegion: !Ref AWS::Region
         Account: !Ref AWS::AccountId
@@ -653,15 +601,15 @@ Resources:
     Type: AWS::Athena::NamedQuery
     Properties:
       Database: !Ref DatabaseName
-      Description: Provides a cur extended with WorkSpaces Metrics info
-      Name: !Sub ${ResourcePrefix}view cur_with_org_data
-      QueryString: !Sub 
-        CREATE OR REPLACE VIEW "euc_cwmetrics_view" AS 
+      Description: Provides WorkSpaces Metrics info
+      Name: !Sub ${ResourcePrefix}view workspaces_metrics_view
+      QueryString: !Sub
+        CREATE OR REPLACE VIEW "workspaces_metrics_view" AS
           SELECT
           "WorkspaceId" , "UserName" , "State" , "BundleId" , "DirectoryId" ,
           "ComputerName" , "RunningMode" , "RootVolumeSizeGib" ,
           "UserVolumeSizeGib" , "accountid" , "region" , "CPUUsage" ,
           "MemoryUsage" , "InSessionLatency" , "UserVolumeDiskUsage" ,
-          "RootVolumeDiskUsage" , "UpTime" 
+          "RootVolumeDiskUsage" , "UpTime"
         FROM
-          "inventory_workspaces_metrics_data"
+          "workspaces_metrics_data"

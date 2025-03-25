@@ -48,7 +48,7 @@
     },
     "Wait for Crawler to be ready": {
       "Type": "Wait",
-      "Seconds": 60,
+      "Seconds": 15,
       "Next": "GetCrawler1"
     },
     "StartCrawler": {
@@ -61,7 +61,7 @@
     },
     "Wait for Crawler Execution": {
       "Type": "Wait",
-      "Seconds": 60,
+      "Seconds": 15,
       "Next": "GetCrawler2"
     },
     "GetCrawler2": {

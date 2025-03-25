@@ -22,6 +22,11 @@ Parameters:
     Type: String
     Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
     Default: ""
+  EUCAccountIDs:
+    Type: String
+    Description: "Comma-separated list of account IDs that user has identified to have WorkSpaces running, used to collect WorkSpaces metrics from. If left blank, metrics will be checked from all linked accounts in Organization."
+    Default: ""
+
 Outputs:
   LambdaFunctionName:
     Value: !Ref LambdaFunction
@@ -143,6 +148,7 @@ Resources:
             LINKED_ACCOUNT_LIST_KEY = os.environ.get('LINKED_ACCOUNT_LIST_KEY', 'linked-account-list.json')
             PAYER_ACCOUNT_LIST_KEY = os.environ.get('PAYER_ACCOUNT_LIST_KEY', 'payer-account-list.json')
             EXCLUDED_ACCOUNT_LIST_KEY = os.environ.get('EXCLUDED_ACCOUNT_LIST_KEY', 'excluded-linked-account-list.csv')
+            EUC_ACCOUNTS = os.environ.get('EUC_ACCOUNT_IDS', '').strip()
 
             MODULE = ""
 
@@ -165,6 +171,7 @@ Resources:
 
                     functions = { # keep keys same as boto3 services
                         'linked': iterate_linked_accounts,
+                        'euc': partial(iterate_accounts_with_filter, EUC_ACCOUNTS),
                         'payers': partial(iterate_admins_accounts, None),
                         'organizations': partial(iterate_admins_accounts, 'organizations'),
                         'compute-optimizer': partial(iterate_admins_accounts, 'compute-optimizer'),
@@ -236,6 +243,8 @@ Resources:
                         try:
                             account_id = ssm.get_parameter(Name=ssm_key)['Parameter']['Value']
                         except ssm.exceptions.ParameterNotFound:
+                            logger.info(f'Not found ssm parameter {ssm_key}. Will use Management Account Id {payer_id}')
+                    yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id})}
                             logger.warning(f'Not found ssm parameter {ssm_key}. Will use Management Account Id {payer_id}')
                     yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id}), "main_exe_uuid": ""}
 
@@ -270,6 +279,16 @@ Resources:
                             count += 1
                             yield format_account(account_id, account.get('Name'), payer_id)
                         logger.info(f'Found {count} accounts for payer {payer_id}')
+
+            def iterate_accounts_with_filter(filter_accounts):
+                ''' same as iterate_linked_accounts but with additional filtering
+                filter_accounts: a comma separated list of accounts OR '*'
+                '''
+                for acc in iterate_linked_accounts():
+                    account_id = json.loads(acc['account'])['account_id']
+                    if account_id in filter_accounts.split(',') or filter_accounts.strip() == '*':
+                        yield acc
+
 
             def get_defined_list(bucket, key):
                 s3 = boto3.client("s3")
@@ -400,6 +419,7 @@ Resources:
           PAYER_ACCOUNT_LIST_KEY: "payer-account-list.json"
           EXCLUDED_ACCOUNT_LIST_KEY: "excluded-linked-account-list.csv"
           DC_ACCOUNT: !Ref AWS::AccountId
+          EUC_ACCOUNT_IDS: !Ref EUCAccountIDs
     Metadata:
       cfn_nag:
         rules_to_suppress:

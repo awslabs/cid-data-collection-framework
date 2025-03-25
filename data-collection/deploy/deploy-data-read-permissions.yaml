@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CID Data Collection - All-in-One for Management Account v3.8.0
+Description: CID Data Collection - All-in-One for Management Account v3.9.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -196,7 +196,6 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         IncludeComputeOptimizerModule: !Ref IncludeComputeOptimizerModule
         IncludeCostAnomalyModule: !Ref IncludeCostAnomalyModule
-        IncludeSupportCasesModule: !Ref IncludeSupportCasesModule
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
         IncludeBackupModule: !Ref IncludeBackupModule
         IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
@@ -216,14 +215,14 @@ Resources:
         IncludeInventoryCollectorModule: !Ref IncludeInventoryCollectorModule
         IncludeECSChargebackModule: !Ref IncludeECSChargebackModule
         IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
-        IncludeEUCUtilizationModule: !Ref IncludeEUCUtilizationModule       
+        IncludeEUCUtilizationModule: !Ref IncludeEUCUtilizationModule
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
         IncludeServiceQuotasModule: !Ref IncludeServiceQuotasModule
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
-      Description: "StackSet in charge of deploying read roles across organization accounts v3.8.0"
+      Description: "StackSet in charge of deploying read roles across organization accounts v3.9.0"
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
         Enabled: true
@@ -252,7 +251,7 @@ Resources:
         - ParameterKey: IncludeRDSUtilizationModule
           ParameterValue: !Ref IncludeRDSUtilizationModule
         - ParameterKey: IncludeEUCUtilizationModule
-          ParameterValue: !Ref IncludeEUCUtilizationModule          
+          ParameterValue: !Ref IncludeEUCUtilizationModule
         - ParameterKey: IncludeBudgetsModule
           ParameterValue: !Ref IncludeBudgetsModule
         - ParameterKey: IncludeTransitGatewayModule

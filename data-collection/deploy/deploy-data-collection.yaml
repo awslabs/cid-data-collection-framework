@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection Stack v3.8.0
+Description: CID Data Collection Stack v3.9.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -30,7 +30,6 @@ Metadata:
           - IncludeInventoryCollectorModule
           - IncludeOrgDataModule
           - IncludeRDSUtilizationModule
-          - IncludeEUCUtilizationModule
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
@@ -38,12 +37,9 @@ Metadata:
           - IncludeLicenseManagerModule
           - IncludeQuickSightModule
           - IncludeServiceQuotasModule
-      - Label:
-          default: 'EUC Module Configuration'
-        Parameters:
           - IncludeEUCUtilizationModule
       - Label:
-          default: 'EUC Module Settings'
+          default: 'EUC (End User Compute) Module Configuration'
         Parameters:
           - EUCAccountIDs
     ParameterLabels:
@@ -225,11 +221,11 @@ Parameters:
     Type: String
     Description: Collects WorkSpaces CloudWatch metrics from your accounts
     AllowedValues: ['yes', 'no']
-    Default: 'no'  
+    Default: 'no'
   EUCAccountIDs:
     Type: String
-    Description: "Optional, If you enable EUC Utilization or Inventory module and you use Amazon WorkSpaces, please provide a comma-separated list of account IDs where WorkSpaces are deployed. If left blank, metrics will be collected from all linked accounts in the Organization."
-    Default: ""
+    Description: "Optional, If you enable EUC Utilization or Inventory module and you use Amazon WorkSpaces, please provide a comma-separated list of account IDs where WorkSpaces are deployed. Or you can set * to collect from all linked accounts in the Organization."
+    Default: "*"
   IncludeOrgDataModule:
     Type: String
     Description: Collects AWS Organizations data such as account Id, account name, organization parent and specified tags
@@ -1259,7 +1255,6 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        EUCAccountIDs: !Ref EUCAccountIDs
         RegionsInScope:
           Fn::If:
             - RegionsInScopeIsEmpty
@@ -1453,6 +1448,7 @@ Resources:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
+        EUCAccountIDs: !Ref EUCAccountIDs
 
   DataCollectionReadAccess:
     Type: AWS::IAM::ManagedPolicy

@@ -67,9 +67,11 @@ Conditions:
   NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
 
 Mappings:
+
   ServicesMap:
     OpensearchDomains:
       path: opensearch-domains
+      collection: LINKED
       table:
         - Name: inventory_opensearch_domains_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -111,6 +113,7 @@ Mappings:
 
     ElasticacheClusters:
       path: elasticache-clusters
+      collection: LINKED
       table:
         - Name: inventory_elasticache_clusters_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -198,6 +201,7 @@ Mappings:
 
     RdsDbClusters:
       path: rds-db-clusters
+      collection: LINKED
       table:
         - Name: inventory_rds_db_clusters_data
           TableType: EXTERNAL_TABLE
@@ -331,6 +335,7 @@ Mappings:
 
     RdsDbInstances:
       path: rds-db-instances
+      collection: LINKED
       table:
         - Name: inventory_rds_db_instances_data
           TableType: EXTERNAL_TABLE
@@ -474,6 +479,7 @@ Mappings:
 
     RdsDbSnapshots:
       path: rds-db-snapshots
+      collection: LINKED
       table:
         - Name: inventory_rds_db_snapshots_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -563,6 +569,7 @@ Mappings:
 
     EBS:
       path: ebs
+      collection: LINKED
       table:
         - Name: inventory_ebs_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -620,6 +627,7 @@ Mappings:
 
     AMI:
       path: ami
+      collection: LINKED
       table:
         - Name: inventory_ami_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -693,6 +701,7 @@ Mappings:
 
     Snapshot:
       path: snapshot
+      collection: LINKED
       table:
         - Name: inventory_snapshot_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -746,6 +755,7 @@ Mappings:
 
     Ec2Instances:
       path: ec2-instances
+      collection: LINKED
       table:
         - Name: inventory_ec2_instances_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -856,6 +866,7 @@ Mappings:
 
     VpcInstances:
       path: vpc
+      collection: LINKED
       table:
         - Name: inventory_vpc_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -902,6 +913,7 @@ Mappings:
           TableType: EXTERNAL_TABLE
     EKSClusters:
       path: eks
+      collection: LINKED
       table:
         - Name: inventory_eks_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -940,6 +952,7 @@ Mappings:
           TableType: EXTERNAL_TABLE
     LambdaFunctions:
       path: lambda-functions
+      collection: LINKED
       table:
         - Name: inventory_lambda_functions_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -1013,6 +1026,7 @@ Mappings:
 
     WorkSpaces:
       path: workspaces
+      collection: EUC # Specific for EUC
       table:
         - Name: inventory_workspaces_data
           Parameters:
@@ -1159,6 +1173,13 @@ Resources:
           TRACKING_TAGS = os.environ.get("TRACKING_TAGS")
           TAG_LIST = TRACKING_TAGS.split(",") if TRACKING_TAGS else []
 
+          # WorkSpaces supported regions
+          # > curl https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonWorkSpaces/current/region_index.json -s | jq '.regions | keys | join(" ")'
+          WORKSPACES_REGIONS = """
+              af-south-1 ap-northeast-1 ap-northeast-2 ap-south-1 ap-southeast-1 ap-southeast-2 ca-central-1 eu-central-1 eu-west-1 eu-west-2
+              il-central-1 sa-east-1 us-east-1 us-gov-east-1 us-gov-west-1 us-west-2
+          """.split()
+
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
@@ -1266,11 +1287,6 @@ Resources:
 
           def workspaces_scan(account_id, region):
               """Special function to scan AWS WorkSpaces resources"""
-              # Define WorkSpaces supported regions
-              WORKSPACES_REGIONS = [
-                  'us-east-1', 'us-west-2', 'ap-south-1', 'ap-northeast-2', 
-                  'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1', 'ca-central-1',
-                  'eu-central-1', 'eu-west-1', 'eu-west-2', 'sa-east-1']
               # Skip if region is not supported by WorkSpaces
               if region not in WORKSPACES_REGIONS:
                   logger.info(f"WorkSpaces not supported in region {region}. Skipping.")
@@ -1281,48 +1297,48 @@ Resources:
                   # Get WorkSpaces data
                   workspaces_data = list(client.get_paginator('describe_workspaces').paginate().search('Workspaces[*]'))
                   if not workspaces_data:
-                    logger.info(f"No WorkSpaces found in {account_id}/{region}")
-                    return
+                      logger.info(f"No WorkSpaces found in {account_id}/{region}")
+                      return
                   # Get connection status and directories for lookup
-                  connection_status = client.describe_workspaces_connection_status()['WorkspacesConnectionStatus']
-                  directories = client.describe_workspace_directories()['Directories']
+                  connection_status = list(client.get_paginator('describe_workspaces_connection_status').paginate().search('WorkspacesConnectionStatus'))
+                  directories = list(client.get_paginator('describe_workspace_directories').paginate().search('Directories'))
                   # Create lookup dictionaries
                   connection_lookup = {conn['WorkspaceId']: conn for conn in connection_status}
                   directory_lookup = {d['DirectoryId']: d for d in directories}
                   # Process workspaces
                   for workspace in workspaces_data:
-                    workspace_id = workspace['WorkspaceId']
-                    dir_id = workspace['DirectoryId']
-            
-                    connection_info = connection_lookup.get(workspace_id, {})
-                    dir_info = directory_lookup.get(dir_id, {})
-            
-                    workspace_info = {
-                        'accountid': account_id,
-                        'region': region,
-                        'ResourceType': 'WorkSpace',
-                        'WorkspaceId': workspace_id,
-                        'UserName': workspace['UserName'],
-                        'DirectoryId': dir_id,
-                        'State': workspace['State'],
-                        'ConnectionStatus': connection_info.get('ConnectionState', 'N/A'),
-                        'LastConnected': connection_info.get('LastKnownUserConnectionTimestamp', 'Never').strftime('%x %X') if isinstance(connection_info.get('LastKnownUserConnectionTimestamp'), datetime) else "01/01/01 00:00:00",
-                        'LastInventoryRun': time.strftime('%x %X'),
-                        'RunningMode': workspace.get("WorkspaceProperties", {}).get("RunningMode", "N/A"),
-                        'ComputeType': workspace.get("WorkspaceProperties", {}).get("ComputeTypeName", "N/A"),
-                        'OperatingSystem': workspace.get("WorkspaceProperties", {}).get("OperatingSystemName", "N/A"),
-                        'Protocol': ''.join(
-                            c for c in str(workspace.get("WorkspaceProperties", {}).get("Protocols", "N/A")) 
-                            if c.isalnum() or c.isspace()
-                        ),
-                        'DirectoryName': dir_info.get('DirectoryName', 'N/A'),
-                        'DirectoryAlias': dir_info.get('Alias', 'N/A'),
-                        'DirectoryType': dir_info.get('DirectoryType', 'N/A'),
-                        'DirectoryMaintenance': dir_info.get("WorkspaceCreationProperties", {}).get("EnableMaintenanceMode", "N/A"),
-                        'ComputerName': workspace.get("ComputerName", ""),
-                        'IPAddress': workspace.get("IpAddress", "")
-                    }            
-                    yield workspace_info
+                      workspace_id = workspace['WorkspaceId']
+                      dir_id = workspace['DirectoryId']
+
+                      connection_info = connection_lookup.get(workspace_id, {})
+                      dir_info = directory_lookup.get(dir_id, {})
+
+                      workspace_info = {
+                          'accountid': account_id,
+                          'region': region,
+                          'ResourceType': 'WorkSpace',
+                          'WorkspaceId': workspace_id,
+                          'UserName': workspace['UserName'],
+                          'DirectoryId': dir_id,
+                          'State': workspace['State'],
+                          'ConnectionStatus': connection_info.get('ConnectionState', 'N/A'),
+                          'LastConnected': connection_info.get('LastKnownUserConnectionTimestamp').strftime('%x %X') if isinstance(connection_info.get('LastKnownUserConnectionTimestamp'), datetime) else "01/01/01 00:00:00",
+                          'LastInventoryRun': time.strftime('%x %X'),
+                          'RunningMode': workspace.get("WorkspaceProperties", {}).get("RunningMode", "N/A"),
+                          'ComputeType': workspace.get("WorkspaceProperties", {}).get("ComputeTypeName", "N/A"),
+                          'OperatingSystem': workspace.get("WorkspaceProperties", {}).get("OperatingSystemName", "N/A"),
+                          'Protocol': ''.join(
+                              c for c in str(workspace.get("WorkspaceProperties", {}).get("Protocols", "N/A"))
+                              if c.isalnum() or c.isspace()
+                          ),
+                          'DirectoryName': dir_info.get('DirectoryName', 'N/A'),
+                          'DirectoryAlias': dir_info.get('Alias', 'N/A'),
+                          'DirectoryType': dir_info.get('DirectoryType', 'N/A'),
+                          'DirectoryMaintenance': dir_info.get("WorkspaceCreationProperties", {}).get("EnableMaintenanceMode", "N/A"),
+                          'ComputerName': workspace.get("ComputerName", ""),
+                          'IPAddress': workspace.get("IpAddress", "")
+                      }
+                      yield workspace_info
               except Exception as exc:
                   logger.error(f"Cannot get WorkSpaces info from {account_id}/{region}: {type(exc)}-{exc}")
 
@@ -1336,6 +1352,7 @@ Resources:
                       "Please do not trigger this Lambda manually."
                       "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
+
               params = [p for p in event.get('params', '').split() if p]
               name = params[0]
 
@@ -1403,7 +1420,6 @@ Resources:
                   'eks': eks_clusters_scan,
                   'workspaces': workspaces_scan
               }
-
               account = json.loads(event["account"])
               account_id = account["account_id"]
               payer_id = account["payer_id"]
@@ -1514,7 +1530,7 @@ Resources:
             AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
             ModuleLambdaARN: !GetAtt LambdaFunction.Arn
             Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-${AwsObject}-Crawler"]'
-            CollectionType: "LINKED"
+            CollectionType: !FindInMap [ServicesMap, !Ref AwsObject, collection]
             Params: !FindInMap [ServicesMap, !Ref AwsObject, path]
             Module: !Ref CFDataName
             DeployRegion: !Ref AWS::Region
@@ -1931,15 +1947,15 @@ Resources:
               gp3_gb_cost + gp3_iops_cost + gp3_throughput_cost AS gp3_total_cost,
               (current_gb_cost + current_iops_cost) - (gp3_gb_cost + gp3_iops_cost + gp3_throughput_cost) as gp3_saving
           FROM inventory_ebs_data
-  
-  EUCInventoryView:
+
+  WorkspacesInventoryView:
     Type: AWS::Athena::NamedQuery
     Properties:
       Database: !Ref DatabaseName
       Description: EUC Inventory View for WorkSpaces inventory data
-      Name: create_euc_inventory_view
+      Name: workspaces_view
       QueryString: !Sub |
-        CREATE OR REPLACE VIEW "euc_inventory_view" AS
+        CREATE OR REPLACE VIEW "workspaces_view" AS
           SELECT
           "workspaceid"
           , "username"
