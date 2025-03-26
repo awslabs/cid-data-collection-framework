@@ -118,7 +118,7 @@ Parameters:
     Default: ''
   AddScheduleForBlockingWrite:
     Type: String
-    Description: 'Set yes to schedule Disabling/Enabling schedule to stop CUR writing for a short period of time to secure QuickSight Dataset refresh.'
+    Description: 'Set yes to schedule Disabling/Enabling schedule to stop CUR replication for a short period of time to secure QuickSight Dataset refresh.'
     Default: "no"
     AllowedValues: ["yes", "no"]
   DisableWriteCronSchedule:
