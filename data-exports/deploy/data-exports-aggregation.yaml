@@ -134,7 +134,6 @@ Parameters:
     AllowedPattern: '^[0-9*,\-/\s?]+$'
     ConstraintDescription: Must be a valid cron expression
 
-
 Conditions:
   EmptySourceAccountIds: !Equals [ !Ref SourceAccountIds, '']
   IsDestinationAccount: !Equals [!Ref DestinationAccountId, !Ref 'AWS::AccountId']
