@@ -50,6 +50,9 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
+  LambdaManageGlueTableARN:
+    Type: String
+    Description: ARN of a Lambda for Managing GlueTable
 
 Outputs:
   StepFunctionARN:
@@ -352,6 +355,133 @@ Resources:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-communications/"
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-status/"
       Configuration: "{\"Version\":1.0,\"Grouping\":{\"TableGroupingPolicy\":\"CombineCompatibleSchemas\"}}"
+
+  GlueTableData:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: support_cases_data
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+        - Name: payer_id
+          Type: string
+        - Name: account_id
+          Type: string
+        - Name: year
+          Type: string
+        - Name: month
+          Type: string
+        - Name: day
+          Type: string
+        StorageDescriptor:
+          Columns:
+          - Name: caseid
+            Type: string
+          - Name: displayid
+            Type: string
+          - Name: subject
+            Type: string
+          - Name: status
+            Type: string
+          - Name: servicecode
+            Type: string
+          - Name: categorycode
+            Type: string
+          - Name: severitycode
+            Type: string
+          - Name: submittedby
+            Type: string
+          - Name: timecreated
+            Type: string
+          - Name: ccemailaddresses
+            Type: array<string>
+          - Name: language
+            Type: string
+          - Name: accountalias
+            Type: string
+          - Name: summary
+            Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: AccountAlias,CCEmailAddresses,CaseId,CategoryCode,DisplayId,Language,ServiceCode,SeverityCode,Status,Subject,SubmittedBy,Summary,TimeCreated
+        Parameters:
+          UPDATED_BY_CRAWLER: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
+
+  GlueTableStatus:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: support_cases_status
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+        - Name: payer_id
+          Type: string
+        StorageDescriptor:
+          Columns:
+          - Name: last_read
+            Type: string
+          - Name: account_id
+            Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-status/"
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: account_id,last_read
+        Parameters:
+          UPDATED_BY_CRAWLER: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
+
+  GlueTableCommunications:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: support_cases_communications
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+        - Name: payer_id
+          Type: string
+        - Name: account_id
+          Type: string
+        - Name: year
+          Type: string
+        - Name: month
+          Type: string
+        - Name: day
+          Type: string
+        StorageDescriptor:
+          Columns:
+          - Name: caseid
+            Type: string
+          - Name: body
+            Type: string
+          - Name: submittedby
+            Type: string
+          - Name: timecreated
+            Type: string
+          - Name: attachmentset
+            Type: string
+          - Name: accountalias
+            Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-communications/"
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: AccountAlias,AttachmentSet,Body,CaseId,SubmittedBy,TimeCreated
+        Parameters:
+          UPDATED_BY_CRAWLER: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine

@@ -50,7 +50,9 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
-
+  LambdaManageGlueTableARN:
+    Type: String
+    Description: ARN of a Lambda for Managing GlueTable
 Outputs:
   StepFunctionARN:
     Description: ARN for the module's Step Function
@@ -259,6 +261,307 @@ Resources:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
       Configuration: "{\"Version\":1.0,\"Grouping\":{\"TableGroupingPolicy\":\"CombineCompatibleSchemas\"}}"
 
+  ModuleGlueTable:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      TableInput:
+        Name: trusted_advisor_data
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+        - Name: payer_id
+          Type: string
+        - Name: year
+          Type: string
+        - Name: month
+          Type: string
+        StorageDescriptor:
+          Columns:
+          - Name: region
+            Type: string
+          - Name: service
+            Type: string
+          - Name: limit name
+            Type: string
+          - Name: limit amount
+            Type: string
+          - Name: current usage
+            Type: string
+          - Name: status
+            Type: string
+          - Name: accountid
+            Type: string
+          - Name: accountname
+            Type: string
+          - Name: category
+            Type: string
+          - Name: datetime
+            Type: string
+          - Name: timestamp
+            Type: string
+          - Name: checkname
+            Type: string
+          - Name: checkid
+            Type: string
+          - Name: resourceid
+            Type: string
+          - Name: issuppressed
+            Type: boolean
+          - Name: resource
+            Type: string
+          - Name: aws config rule
+            Type: string
+          - Name: input parameters
+            Type: string
+          - Name: last updated time
+            Type: string
+          - Name: region/az
+            Type: string
+          - Name: function name
+            Type: string
+          - Name: function version
+            Type: string
+          - Name: memory size(mb)
+            Type: string
+          - Name: recommended memory size(mb)
+            Type: string
+          - Name: lookback period (days)
+            Type: string
+          - Name: performance risk
+            Type: string
+          - Name: db instance
+            Type: string
+          - Name: vpc id
+            Type: string
+          - Name: multi-az
+            Type: string
+          - Name: workload arn
+            Type: string
+          - Name: workload name
+            Type: string
+          - Name: reviewer name
+            Type: string
+          - Name: workload type
+            Type: string
+          - Name: workload started date
+            Type: string
+          - Name: workload last modified date
+            Type: string
+          - Name: number of identified hris for performance
+            Type: string
+          - Name: number of hris resolved for performance
+            Type: string
+          - Name: number of questions answered for performance
+            Type: string
+          - Name: total number of questions in performance pillar
+            Type: string
+          - Name: number of identified hris for security
+            Type: string
+          - Name: number of hris resolved for security
+            Type: string
+          - Name: number of questions answered for security
+            Type: string
+          - Name: total number of questions in security pillar
+            Type: string
+          - Name: number of identified hris for reliability
+            Type: string
+          - Name: number of hris resolved for reliability
+            Type: string
+          - Name: number of questions answered for reliability
+            Type: string
+          - Name: total number of questions in reliability pillar
+            Type: string
+          - Name: number of identified hris for cost optimization
+            Type: string
+          - Name: number of hris resolved for cost optimization
+            Type: string
+          - Name: number of questions answered for cost optimization
+            Type: string
+          - Name: total number of questions in cost optimization pillar
+            Type: string
+          - Name: trail name
+            Type: string
+          - Name: logging status
+            Type: string
+          - Name: bucket name
+            Type: string
+          - Name: last delivery error
+            Type: string
+          - Name: aws account id
+            Type: string
+          - Name: security group name
+            Type: string
+          - Name: security group id
+            Type: string
+          - Name: protocol
+            Type: string
+          - Name: port
+            Type: string
+          - Name: ip range
+            Type: string
+          - Name: db instance identifier
+            Type: string
+          - Name: db instance arn
+            Type: string
+          - Name: deployment type
+            Type: string
+          - Name: backup type
+            Type: string
+          - Name: reason
+            Type: string
+          - Name: ecs cluster name/ecs service name
+            Type: string
+          - Name: number of availability zones
+            Type: string
+          - Name: spread task placement strategy enabled and applied correctly
+            Type: string
+          - Name: freestoragespace metric (mb)
+            Type: string
+          - Name: db instance allocated storage (mb)
+            Type: string
+          - Name: db instance storage used percent
+            Type: string
+          - Name: db instance name
+            Type: string
+          - Name: instance type
+            Type: string
+          - Name: storage provisioned (gb)
+            Type: string
+          - Name: days since last connection
+            Type: string
+          - Name: estimated monthly savings (on demand)
+            Type: string
+          - Name: instance id
+            Type: string
+          - Name: instance name
+            Type: string
+          - Name: estimated monthly savings
+            Type: string
+          - Name: day 1
+            Type: string
+          - Name: day 2
+            Type: string
+          - Name: day 3
+            Type: string
+          - Name: day 4
+            Type: string
+          - Name: day 5
+            Type: string
+          - Name: day 6
+            Type: string
+          - Name: day 7
+            Type: string
+          - Name: day 8
+            Type: string
+          - Name: day 9
+            Type: string
+          - Name: day 10
+            Type: string
+          - Name: day 11
+            Type: string
+          - Name: day 12
+            Type: string
+          - Name: day 13
+            Type: string
+          - Name: day 14
+            Type: string
+          - Name: 14-day average cpu utilization
+            Type: string
+          - Name: 14-day average network i/o
+            Type: string
+          - Name: number of days low utilization
+            Type: string
+          - Name: engine name
+            Type: string
+          - Name: db instance class
+            Type: string
+          - Name: task definition arn
+            Type: string
+          - Name: container definition names
+            Type: string
+          - Name: password policy
+            Type: string
+          - Name: uppercase
+            Type: string
+          - Name: lowercase
+            Type: string
+          - Name: number
+            Type: string
+          - Name: non-alphanumeric
+            Type: string
+          - Name: function arn
+            Type: string
+          - Name: runtime
+            Type: string
+          - Name: days to deprecation
+            Type: string
+          - Name: deprecation date
+            Type: string
+          - Name: average daily invokes
+            Type: string
+          - Name: last refresh time
+            Type: string
+          - Name: diskqueuedepth metric
+            Type: string
+          - Name: versioning
+            Type: string
+          - Name: mfa delete enabled
+            Type: string
+          - Name: engine version current
+            Type: string
+          - Name: recommended value
+            Type: string
+          - Name: the function with version which is flagged.
+            Type: string
+          - Name: current day async requests dropped percentage.
+            Type: string
+          - Name: current day async requests.
+            Type: string
+          - Name: average daily async requests dropped percentage.
+            Type: string
+          - Name: average daily async requests.
+            Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: 14-day average cpu utilization,14-day average network i/o,accountid,accountname,average
+                daily async requests dropped percentage.,average daily async requests.,average
+                daily invokes,aws account id,aws config rule,backup type,bucket name,category,checkid,checkname,container
+                definition names,current day async requests dropped percentage.,current
+                day async requests.,current usage,datetime,day 1,day 10,day 11,day 12,day
+                13,day 14,day 2,day 3,day 4,day 5,day 6,day 7,day 8,day 9,days since
+                last connection,days to deprecation,db instance,db instance allocated
+                storage (mb),db instance arn,db instance class,db instance identifier,db
+                instance name,db instance storage used percent,deployment type,deprecation
+                date,diskqueuedepth metric,ecs cluster name/ecs service name,engine
+                name,engine version current,estimated monthly savings,estimated monthly
+                savings (on demand),freestoragespace metric (mb),function arn,function
+                name,function version,input parameters,instance id,instance name,instance
+                type,ip range,issuppressed,last delivery error,last refresh time,last
+                updated time,limit amount,limit name,logging status,lookback period
+                (days),lowercase,memory size(mb),mfa delete enabled,multi-az,non-alphanumeric,number,number
+                of availability zones,number of days low utilization,number of hris
+                resolved for cost optimization,number of hris resolved for performance,number
+                of hris resolved for reliability,number of hris resolved for security,number
+                of identified hris for cost optimization,number of identified hris for
+                performance,number of identified hris for reliability,number of identified
+                hris for security,number of questions answered for cost optimization,number
+                of questions answered for performance,number of questions answered for
+                reliability,number of questions answered for security,password policy,performance
+                risk,port,protocol,reason,recommended memory size(mb),recommended value,region,region/az,resource,resourceid,reviewer
+                name,runtime,security group id,security group name,service,spread task
+                placement strategy enabled and applied correctly,status,storage provisioned
+                (gb),task definition arn,the function with version which is flagged.,timestamp,total
+                number of questions in cost optimization pillar,total number of questions
+                in performance pillar,total number of questions in reliability pillar,total
+                number of questions in security pillar,trail name,uppercase,versioning,vpc
+                id,workload arn,workload last modified date,workload name,workload started
+                date,workload type
+        Parameters:
+          UPDATED_BY_CRAWLER: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine

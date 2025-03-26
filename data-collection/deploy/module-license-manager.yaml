@@ -59,6 +59,9 @@ Parameters:
     Type: String
     Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
     Default: ""
+  LambdaManageGlueTableARN:
+    Type: String
+    Description: ARN of a Lambda for Managing GlueTable
 
 Conditions:
   NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
@@ -282,10 +285,115 @@ Resources:
     Properties:
       Name: !Sub '${ResourcePrefix}${CFDataName}-${LicenseDataPrefix}-Crawler'
       Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-${LicenseDataPrefix}/"
+
+  GrantsGlueTable:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: license_manager_grants # this must be ${CFDataName}-${GrantDataPrefix} but with underscores instead of -
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+        - Name: payer_id
+          Type: string
+        - Name: year
+          Type: string
+        - Name: month
+          Type: string
+        - Name: day
+          Type: string
+        StorageDescriptor:
+          Columns:
+          - Name: grantarn
+            Type: string
+          - Name: grantname
+            Type: string
+          - Name: parentarn
+            Type: string
+          - Name: licensearn
+            Type: string
+          - Name: granteeprincipalarn
+            Type: string
+          - Name: homeregion
+            Type: string
+          - Name: grantstatus
+            Type: string
+          - Name: version
+            Type: string
+          - Name: grantedoperations
+            Type: array<string>
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-${GrantDataPrefix}/"
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: GrantArn,GrantName,GrantStatus,GrantedOperations,GranteePrincipalArn,HomeRegion,LicenseArn,ParentArn,Version
+        Parameters:
+          UPDATED_BY_CRAWLER: !Sub '${ResourcePrefix}${CFDataName}-${GrantDataPrefix}-Crawler'
+
+  LicensesGlueTable:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: license_manager_licenses # this must be ${CFDataName}-${LicenseDataPrefix} but with underscores instead of -
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+        - Name: payer_id
+          Type: string
+        - Name: year
+          Type: string
+        - Name: month
+          Type: string
+        - Name: day
+          Type: string
+        StorageDescriptor:
+          Columns:
+          - Name: licensearn
+            Type: string
+          - Name: licensename
+            Type: string
+          - Name: productname
+            Type: string
+          - Name: productsku
+            Type: string
+          - Name: issuer
+            Type: struct<Name:string,KeyFingerprint:string>
+          - Name: homeregion
+            Type: string
+          - Name: status
+            Type: string
+          - Name: validity
+            Type: struct<Begin:string>
+          - Name: beneficiary
+            Type: string
+          - Name: entitlements
+            Type: array<struct<Name:string,Value:string,Unit:string,AllowCheckIn:boolean>>
+          - Name: consumptionconfiguration
+            Type: struct<RenewType:string,ProvisionalConfiguration:struct<MaxTimeToLiveInMinutes:int>>
+          - Name: licensemetadata
+            Type: array<struct<Name:string,Value:string>>
+          - Name: createtime
+            Type: string
+          - Name: version
+            Type: string
+          - Name: receivedmetadata
+            Type: struct<ReceivedStatus:string,AllowedOperations:array<string>>
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location:  !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-${LicenseDataPrefix}/"
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: Beneficiary,ConsumptionConfiguration,CreateTime,Entitlements,HomeRegion,Issuer,LicenseArn,LicenseMetadata,LicenseName,ProductName,ProductSKU,ReceivedMetadata,Status,Validity,Version
+        Parameters:
+          UPDATED_BY_CRAWLER: !Sub '${ResourcePrefix}${CFDataName}-${LicenseDataPrefix}-Crawler'
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
