@@ -121,12 +121,11 @@ Resources:
         ZipFile: |
           import os
           import json
+          import logging
           from datetime import date, datetime
           from json import JSONEncoder
-          from typing import List, Dict
           import boto3
           from botocore.client import Config
-          import logging
 
           PREFIX = os.environ["PREFIX"]
           BUCKET = os.environ["BUCKET_NAME"]
@@ -147,8 +146,7 @@ Resources:
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
-          def lambda_handler(event, context):
-              collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+          def lambda_handler(event, context): #pylint: disable=unused-argument
               if 'account' not in event:
                   raise ValueError(
                       "Please do not trigger this Lambda manually."
@@ -165,10 +163,10 @@ Resources:
                   upload_to_s3(account_id, payer_id, "data", filename)
 
                   logger.info(f"Collecting TA Priority for account: {account_id}")
-                  filename = read_ta_priority(account_id, account_name, payer_id)
+                  filename = read_ta_priority(account_id, account_name)
                   upload_to_s3(account_id, payer_id, "priority-data", filename)
 
-              except Exception as e:
+              except Exception as e: #pylint: disable=broad-exception-caught
                   logging.warning(e)
 
           def upload_to_s3(account_id, payer_id, suffix, tmp_file):
@@ -179,11 +177,11 @@ Resources:
               if os.path.getsize(tmp_file) == 0:
                   print(f"No data in file for {tmp_file}")
                   return
-        
+
               try:
                   boto3.client("s3").upload_file(tmp_file, BUCKET, key)
                   print(f"Data for {account_id} in s3 - {key}")
-              except Exception as e:
+              except Exception as e: #pylint: disable=broad-exception-caught
                   print(f"{type(e)}: {e}")
 
           def assume_role(account_id, service, region, role):
@@ -201,35 +199,36 @@ Resources:
               )
 
           def _json_serial(self, obj):
-              if isinstance(obj, (datetime, date)): return obj.isoformat()
-              return JSONEncoder.default(self, obj)
+              return obj.isoformat() if isinstance(obj, (datetime, date)) else JSONEncoder.default(self, obj)
 
           def read_ta(account_id, account_name):
-              f = open(TMP_FILE, "w")
-              support = assume_role(account_id, "support", REGIONS[0], ROLE_NAME)
-              checks = support.describe_trusted_advisor_checks(language="en")["checks"]
-              for check in checks:
-                  #print(json.dumps(check))
-                  if (COSTONLY and check.get("category") != "cost_optimizing"): continue
-                  try:
-                      result = support.describe_trusted_advisor_check_result(checkId=check["id"], language="en")['result']
-                      #print(json.dumps(result))
-                      if result.get("status") == "not_available": continue
-                      dt = result['timestamp']
-                      ts = datetime.strptime(dt, '%Y-%m-%dT%H:%M:%SZ').strftime('%s')
-                      for resource in result["flaggedResources"]:
-                          output = {}
-                          if "metadata" in resource:
-                              output.update(dict(zip(check["metadata"], resource["metadata"])))
-                              del resource['metadata']
-                          resource["Region"] = resource.pop("region") if "region" in resource else '-'
-                          resource["Status"] = resource.pop("status") if "status" in resource else '-'
-                          output.update({"AccountId":account_id, "AccountName":account_name, "Category": check["category"], 'DateTime': dt, 'Timestamp': ts, "CheckName": check["name"], "CheckId": check["id"]})
-                          output.update(resource)
-                          output = {k.lower(): v for k, v in output.items()}
-                          f.write(json.dumps(output, default=_json_serial) + "\n")
-                  except Exception as e:
-                      print(f'{type(e)}: {e}')
+              with open(TMP_FILE, "w", encoding='utf-8') as f:
+                  support = assume_role(account_id, "support", REGIONS[0], ROLE_NAME)
+                  checks = support.describe_trusted_advisor_checks(language="en")["checks"]
+                  for check in checks:
+                      #print(json.dumps(check))
+                      if (COSTONLY and check.get("category") != "cost_optimizing"):
+                          continue
+                      try:
+                          result = support.describe_trusted_advisor_check_result(checkId=check["id"], language="en")['result']
+                          #print(json.dumps(result))
+                          if result.get("status") == "not_available":
+                              continue
+                          dt = result['timestamp']
+                          ts = datetime.strptime(dt, '%Y-%m-%dT%H:%M:%SZ').strftime('%s')
+                          for resource in result["flaggedResources"]:
+                              output = {}
+                              if "metadata" in resource:
+                                  output.update(dict(zip(check["metadata"], resource["metadata"])))
+                                  del resource['metadata']
+                              resource["Region"] = resource.pop("region") if "region" in resource else '-'
+                              resource["Status"] = resource.pop("status") if "status" in resource else '-'
+                              output.update({"AccountId":account_id, "AccountName":account_name, "Category": check["category"], 'DateTime': dt, 'Timestamp': ts, "CheckName": check["name"], "CheckId": check["id"]})
+                              output.update(resource)
+                              output = {k.lower(): v for k, v in output.items()}
+                              f.write(json.dumps(output, default=_json_serial) + "\n")
+                      except Exception as e: #pylint: disable=broad-exception-caught
+                          print(f'{type(e)}: {e}')
               return TMP_FILE
 
           def _isoformat(date_value, default='N/A'):
@@ -237,7 +236,7 @@ Resources:
               """
               return date_value.isoformat() if isinstance(date_value, datetime) else default
 
-          def read_ta_priority(account_id, account_name, payer_id):
+          def read_ta_priority(account_id, account_name):
               """ Read recommendations and write to a file
               """
               trustedadvisor = assume_role(account_id, "trustedadvisor", REGIONS[0], ROLE_NAME)
@@ -261,10 +260,10 @@ Resources:
                                   .paginate(recommendationIdentifier=recommendation['arn'])
                                   .search('recommendationResourceSummaries[]')
                               )
-                          except Exception as e:
+                          except trustedadvisor.exceptions.ClientError as e:
                               print(f"Error getting resources for recommendation {recommendation['arn']}: {str(e)}")
                               resources = []
-                          
+
                           # Base recommendation data
                           rec_data = {
                               'recommendationArn': recommendation['arn'],
@@ -291,7 +290,7 @@ Resources:
                               })
                               jsonfile.write(json.dumps(resource_data) + '\n')
 
-              except Exception as e:
+              except Exception as e: #pylint: disable=broad-exception-caught
                   print(f"Error processing TA-Priority: {str(e)}")
                   raise
               return TMP_FILE_Priority
