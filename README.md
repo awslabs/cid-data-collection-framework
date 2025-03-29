@@ -69,7 +69,7 @@ The following table provides a sample cost breakdown for deploying of Foundation
 | AWS Athena                      | Data scanned monthly          | $15/month*       |
 | **Total Estimated Monthly Cost** |                              | **<$50**         |
 
-\* Costs are relative to the size of collected data (number of workloads, AWS Accounts, Regions etc).
+\* Costs are relative to the size of collected data (number of workloads, AWS Accounts, Regions etc) and configured data collection frequency.
 
 Pleas use AWS Pricing Calculator for precise estimation.
 
