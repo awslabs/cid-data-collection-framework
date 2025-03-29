@@ -63,7 +63,7 @@ The following table provides a sample cost breakdown for deploying of Foundation
 | S3                              | Monthly storage               | $5-10/month*     |
 | AWS Glue Crawler                | Monthly operation.            | $3/month*        |
 | AWS Athena                      | Data scanned monthly          | $15/month*       |
-| **Total Estimated Monthly Cost** |                              | **<$50**          |
+| **Total Estimated Monthly Cost** |                              | **<$50**         |
 
 \* Costs are relative to the size of collected data (number of workloads, AWS Accounts, Regions etc).
 
