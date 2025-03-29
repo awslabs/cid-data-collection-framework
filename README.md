@@ -6,6 +6,7 @@
 1. [Architecture of Data Collection](#Architecture-of-Data-Collection)
 1. [Cost](#Cost)
 1. [Prerequisites](#Prerequisites)
+1. [Regions](#Regions)
 1. [Deployment and Cleanup Steps](#Deployment-and-Cleanup-Steps)
 1. [Changelogs](#Changelogs)
 1. [Feedback](#Feedback)
@@ -82,12 +83,43 @@ You need access to AWS Accounts. We recommend deployment of the Data Collection 
 
 If you do not have access to the Management/Payer Account, you can still collect some types fo data across multiple Linked accounts.
 
+## Regions
+Make sure you are installing data collection in the same region where you are going to use the data to avoid cross region charges.
+
+| Region Name | Region Code | Available |
+|-------------|-------------|-----------|
+| Africa (Cape Town) | af-south-1 | No |
+| Asia Pacific (Tokyo) | ap-northeast-1 | Yes |
+| Asia Pacific (Seoul) | ap-northeast-2 | Yes |
+| Asia Pacific (Mumbai) | ap-south-1 | Yes |
+| Asia Pacific (Singapore) | ap-southeast-1 | Yes |
+| Asia Pacific (Sydney) | ap-southeast-2 | Yes |
+| Asia Pacific (Jakarta) | ap-southeast-3 | No |
+| Canada (Central) | ca-central-1 | Yes |
+| China (Beijing) | cn-north-1 | No |
+| Europe (Frankfurt) | eu-central-1 | Yes |
+| Europe (Zurich) | eu-central-2 | No |
+| Europe (Stockholm) | eu-north-1 | Yes |
+| Europe (Milan) | eu-south-1 | No |
+| Europe (Spain) | eu-south-2 | No |
+| Europe (Ireland) | eu-west-1 | Yes |
+| Europe (London) | eu-west-2 | Yes |
+| Europe (Paris) | eu-west-3 | Yes |
+| South America (São Paulo) | sa-east-1 | Yes |
+| US East (N. Virginia) | us-east-1 | Yes |
+| US East (Ohio) | us-east-2 | Yes |
+| AWS GovCloud (US-East) | us-gov-east-1 | No |
+| AWS GovCloud (US-West) | us-gov-west-1 | No |
+| US West (Oregon) | us-west-2 | Yes |
+
+
 ## Deployment and Cleanup Steps
 Reference to folders.
 * [data-exports](/data-exports)
 * [data-collection](/data-collection)
 * [case-summarization](/case-summarization)
-
+* [rls](/rls)
+* [security-hub](/security-hub)
 
 ## Changelogs
 Check [Releases](/../../releases)
