@@ -40,6 +40,8 @@ This repository contains following elements:
 
 See more in [data-exports](/data-exports).
 
+
+
 ## Architecture of Data Collection
 ![Architecture of Advanced Data Collection](images/architecture-data-collection.png  "Architecture of Advanced Data Collection")
 1. The Advanced Data Collection can be deployed to enable advanced dashboards based on [AWS Trusted Advisor](https://aws.amazon.com/trustedadvisor/), [AWS Health Events](https://docs.aws.amazon.com/health/latest/ug/getting-started-phd.html) and other sources. Additional data is retrieved from [AWS Organization](https://aws.amazon.com/organizations/) or Linked Accounts. In this case [Amazon EventBridge](https://aws.amazon.com/eventbridge/) rule triggers an [AWS Step Functions](https://aws.amazon.com/step-functions/) for data collection modules on a configurable schedule.
@@ -53,6 +55,8 @@ See more in [data-exports](/data-exports).
 5. Advanced Cloud Intelligence Dashboards leverage [Amazon Athena](https://aws.amazon.com/athena/) and [Amazon QuickSight](https://aws.amazon.com/quicksight/) for comprehensive data analysis.
 
 See more in [data-collection](/data-collection).
+
+
 
 
 ## Cost
