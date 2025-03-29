@@ -16,12 +16,14 @@
 ## Overview
 This repository is a part of [Cloud Intelligence Dashboards](https://catalog.workshops.aws/awscid), a project that provides AWS customers with a series of in-depth and customizable dashboards for the most comprehensive cost and usage details to help optimize cost, track usage goals, and achieve operational excellence.
 
-All Data Collections can be used independently from Dashboards. Typically data collections store data on Amazon S3 and provide AWS Glue tables and Athena Views to explore and use these data.
-
 This repository contains following elements:
 * [data-exports](/data-exports) - a Cloud Formation Templates for AWS Data Exports, such as Cost and Usage Report 2.0 and others. This allows a replication of Exports from your Management Account(s) to a Dedicated Data Collection Accounts as well as aggregation of multiple Exports from a set of Linked Accounts.
 * [data-collection](/data-collection) - a set of Cloud Formation Templates for collecting infrastructure operational data from Management and Linked Accounts. Such as data from AWS Trusted Advisor, AWS Compute Optimizer, Inventories, Pricing, AWS Health, AWS Support Cases etc. See more about types of data collected [here](/data-collection).
 * [case-summarization](/case-summarization) - an additional Cloud Formation Template for deploying the AWS Support Case Summarization plugin that offers the capability to summarize cases through Generative AI powered by Amazon Bedrock.
+* [rls](/rls) - a stack for managing Row Level Security for CID Dashboards.
+* [security-hub](/security-hub) - Collection of data from AWS Security Hub.
+
+All Data Collections can be used independently from Dashboards. Typically data collections store data on [Amazon S3 Bucket](https://aws.amazon.com/s3/) and provide [AWS Glue](https://aws.amazon.com/glue/) tables and [Amazon Athena](https://aws.amazon.com/athena/) Views to explore and use these data.
 
 ### Other AWS Services
 * [Collection of AWS Config data](https://github.com/aws-samples/config-resource-compliance-dashboard)
@@ -62,16 +64,16 @@ See more in [data-collection](/data-collection).
 ## Cost
 The following table provides a sample cost breakdown for deploying of Foundational Dashboards with the default parameters in the US East (N. Virginia) Region for one month. 
 
-| AWS Service                     | Dimensions                    |  Cost [USD]      |
-|---------------------------------|-------------------------------|------------------|
-| S3                              | Monthly storage               | $5-10/month*     |
-| AWS Lambda                      | On the schedule 1/14 days     | $<3/month*       |
-| AWS Step Functions              | On the schedule 1/14 days     | $<3/month*       |
-| AWS Glue Crawler                | On schedule                   | $3/month*        |
-| AWS Athena                      | Data scanned monthly          | $15/month*       |
-| **Total Estimated Monthly Cost** |                              | **<$50**         |
+| AWS Service                     | Dimensions                    | Monthly Cost [USD] |
+|---------------------------------|-------------------------------|--------------------|
+| S3                              | Monthly storage               | $5-10*             |
+| AWS Lambda                      | On the schedule 1/14 days     | $<3*               |
+| AWS Step Functions              | On the schedule 1/14 days     | $<3*               |
+| AWS Glue Crawler                | On schedule                   | $<3*               |
+| AWS Athena                      | Data scanned monthly          | $15*               |
+| **Total Estimated Monthly Cost** |                              | **<$50**           |
 
-\* Costs are relative to the size of collected data (number of workloads, AWS Accounts, Regions etc) and configured data collection frequency.
+\* Costs are relative to the size of collected data (number of workloads, modules activated, AWS Accounts, Regions etc) and configured data collection frequency.
 
 Pleas use AWS Pricing Calculator for precise estimation.
 
