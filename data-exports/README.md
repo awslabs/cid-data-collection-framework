@@ -9,7 +9,7 @@
 - [FAQ](#faq)
 
 ## Introduction
-This document describes AWS Data Exports functionality and Legacy Cost and Usage Reports (CUR) for cost management and analysis purposes.
+This readme contains description of solutions for AWS Data Exports and Legacy CUR replication and consolidation across multiple accounts. This is a part of Cloud Intelligence Dashboards and it is recommended by [AWS Data Exports official documentation](https://docs.aws.amazon.com/cur/latest/userguide/dataexports-processing.html).
 
 ## Data Exports
 
