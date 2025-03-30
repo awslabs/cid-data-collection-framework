@@ -13,7 +13,10 @@ This readme contains description of solutions for AWS Data Exports and Legacy CU
 
 ## Data Exports
 
-For deployment instructions, please refer to the documentation at: https://catalog.workshops.aws/awscid/data-exports
+For deployment instructions, please refer to the documentation at: https://catalog.workshops.aws/awscid/data-exports.  
+
+Check code here: [data-exports-aggregation.yaml](deploy/data-exports-aggregation.yaml)
+
 
 ### Basic Architecture of Data Exports
 ![Basic Architecture of Data Exports](/.images/architecture-data-exports.png  "Basic Architecture of Data Exports")
@@ -48,6 +51,11 @@ For customers with additional requirements, an enhanced architecture is availabl
 Legacy AWS Cost and Usage Reports (Legacy CUR) can still be used for Cloud Intelligence Dashboards and other use cases.
 
 The CID project provides a CloudFormation template for Legacy CUR. Unlike the Data Exports CloudFormation template, it does not provide AWS Glue tables. You can use this template to replicate CUR and aggregate CUR from multiple source accounts (Management or Linked).
+
+![Basic Architecture of CUR](/.images/architecture-legacy-cur.png  "Basic Architecture of CUR")
+
+
+Check code here: [cur-aggregation.yaml](deploy/cur-aggregation.yaml)
 
 ## FAQ
 
