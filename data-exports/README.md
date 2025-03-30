@@ -16,7 +16,7 @@ This readme contains description of solutions for AWS Data Exports and Legacy CU
 For deployment instructions, please refer to the documentation at: https://catalog.workshops.aws/awscid/data-exports
 
 ### Basic Architecture of Data Exports
-![Architecture of Data Exports](.images/architecture-data-exports.png  "Basic Architecture of Data Exports")
+![Basic Architecture of Data Exports](.images/architecture-data-exports.png  "Basic Architecture of Data Exports")
 
 1. [AWS Data Exports](https://aws.amazon.com/aws-cost-management/aws-data-exports/) delivers daily Cost & Usage Report (CUR2) and other reports to an [Amazon S3 Bucket](https://aws.amazon.com/s3/) in the Management Account.
 2. [Amazon S3](https://aws.amazon.com/s3/) replication rule copies Export data to a dedicated Data Collection Account S3 bucket automatically.
@@ -26,7 +26,7 @@ For deployment instructions, please refer to the documentation at: https://catal
 ### Advanced Architecture of Data Exports
 For customers with additional requirements, an enhanced architecture is available:
 
-![Architecture](.images/architecture-data-exports-advanced.png  "Advanced Architecture of Data Exports")
+![Advanced Architecture of Data Exports](.images/architecture-data-exports-advanced.png  "Advanced Architecture of Data Exports")
 
 1. [AWS Data Exports](https://aws.amazon.com/aws-cost-management/aws-data-exports/) service delivers [Cost & Usage Report (CUR2)](https://docs.aws.amazon.com/cur/latest/userguide/what-is-cur.html) daily to an [Amazon S3](https://aws.amazon.com/s3/) Bucket in your AWS Account (either in Management/Payer Account or a regular Linked Account). In us-east-1 region, the CloudFormation creates native resources; in other regions, CloudFormation uses AWS Lambda and Custom Resource to provision Data Exports in us-east-1.
 
