@@ -124,34 +124,32 @@ Resources:
         ZipFile: |
           import os
           import json
+          import logging
           from datetime import date, datetime
           from json import JSONEncoder
-
           import boto3
           from botocore.client import Config
-          from botocore.exceptions import ClientError
-          import logging
 
           PREFIX = os.environ["PREFIX"]
           BUCKET = os.environ["BUCKET_NAME"]
           ROLE_NAME = os.environ['ROLENAME']
           COSTONLY = os.environ.get('COSTONLY', 'no').lower() == 'yes'
           TMP_FILE = "/tmp/data.json"
+          TMP_FILE_Priority = "/tmp/data_priority.json"
           REGIONS = ["us-east-1"]
 
           #config to avoid ThrottlingException
           config = Config(
-            retries = {
-                'max_attempts': 10,
-                'mode': 'standard'
-            }
+              retries = {
+                  'max_attempts': 10,
+                  'mode': 'standard'
+              }
           )
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
-          def lambda_handler(event, context):
-              collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+          def lambda_handler(event, context): #pylint: disable=unused-argument
               if 'account' not in event:
                   raise ValueError(
                       "Please do not trigger this Lambda manually."
@@ -162,25 +160,31 @@ Resources:
                   account_id = account["account_id"]
                   account_name = account["account_name"]
                   payer_id = account["payer_id"]
-                  logger.info(f"Collecting data for account: {account_id}")
-                  read_ta(account_id, account_name)
-                  upload_to_s3(account_id, payer_id)
-              except Exception as e:
+
+                  logger.info(f"Collecting TA for account: {account_id}")
+                  filename = read_ta(account_id, account_name)
+                  upload_to_s3(account_id, payer_id, "data", filename)
+
+                  logger.info(f"Collecting TA Priority for account: {account_id}")
+                  filename = read_ta_priority(account_id, account_name)
+                  upload_to_s3(account_id, payer_id, "priority-data", filename)
+
+              except Exception as e: #pylint: disable=broad-exception-caught
                   logging.warning(e)
 
-          def upload_to_s3(account_id, payer_id):
-              if os.path.getsize(TMP_FILE) == 0:
-                  print(f"No data in file for {PREFIX}")
+          def upload_to_s3(account_id, payer_id, suffix, tmp_file):
+              key = datetime.now().strftime(
+                  f"{PREFIX}/{PREFIX}-{suffix}/payer_id={payer_id}/year=%Y/month=%m/{PREFIX}-{account_id}-%d%m%Y-%H%M%S.json"
+              )
+
+              if os.path.getsize(tmp_file) == 0:
+                  print(f"No data in file for {tmp_file}")
                   return
-              d = datetime.now()
-              month = d.strftime("%m")
-              year = d.strftime("%Y")
-              _date = d.strftime("%d%m%Y-%H%M%S")
-              key = f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year={year}/month={month}/{PREFIX}-{account_id}-{_date}.json"
+
               try:
-                  boto3.client("s3").upload_file(TMP_FILE, BUCKET, key)
+                  boto3.client("s3").upload_file(tmp_file, BUCKET, key)
                   print(f"Data for {account_id} in s3 - {key}")
-              except Exception as e:
+              except Exception as e: #pylint: disable=broad-exception-caught
                   print(f"{type(e)}: {e}")
 
           def assume_role(account_id, service, region, role):
@@ -198,35 +202,103 @@ Resources:
               )
 
           def _json_serial(self, obj):
-              if isinstance(obj, (datetime, date)): return obj.isoformat()
-              return JSONEncoder.default(self, obj)
+              return obj.isoformat() if isinstance(obj, (datetime, date)) else JSONEncoder.default(self, obj)
 
           def read_ta(account_id, account_name):
-              f = open(TMP_FILE, "w")
-              support = assume_role(account_id, "support", REGIONS[0], ROLE_NAME)
-              checks = support.describe_trusted_advisor_checks(language="en")["checks"]
-              for check in checks:
-                  #print(json.dumps(check))
-                  if (COSTONLY and check.get("category") != "cost_optimizing"): continue
-                  try:
-                      result = support.describe_trusted_advisor_check_result(checkId=check["id"], language="en")['result']
-                      #print(json.dumps(result))
-                      if result.get("status") == "not_available": continue
-                      dt = result['timestamp']
-                      ts = datetime.strptime(dt, '%Y-%m-%dT%H:%M:%SZ').strftime('%s')
-                      for resource in result["flaggedResources"]:
-                          output = {}
-                          if "metadata" in resource:
-                              output.update(dict(zip(check["metadata"], resource["metadata"])))
-                              del resource['metadata']
-                          resource["Region"] = resource.pop("region") if "region" in resource else '-'
-                          resource["Status"] = resource.pop("status") if "status" in resource else '-'
-                          output.update({"AccountId":account_id, "AccountName":account_name, "Category": check["category"], 'DateTime': dt, 'Timestamp': ts, "CheckName": check["name"], "CheckId": check["id"]})
-                          output.update(resource)
-                          output = {k.lower(): v for k, v in output.items()}
-                          f.write(json.dumps(output, default=_json_serial) + "\n")
-                  except Exception as e:
-                      print(f'{type(e)}: {e}')
+              with open(TMP_FILE, "w", encoding='utf-8') as f:
+                  support = assume_role(account_id, "support", REGIONS[0], ROLE_NAME)
+                  checks = support.describe_trusted_advisor_checks(language="en")["checks"]
+                  for check in checks:
+                      #print(json.dumps(check))
+                      if (COSTONLY and check.get("category") != "cost_optimizing"):
+                          continue
+                      try:
+                          result = support.describe_trusted_advisor_check_result(checkId=check["id"], language="en")['result']
+                          #print(json.dumps(result))
+                          if result.get("status") == "not_available":
+                              continue
+                          dt = result['timestamp']
+                          ts = datetime.strptime(dt, '%Y-%m-%dT%H:%M:%SZ').strftime('%s')
+                          for resource in result["flaggedResources"]:
+                              output = {}
+                              if "metadata" in resource:
+                                  output.update(dict(zip(check["metadata"], resource["metadata"])))
+                                  del resource['metadata']
+                              resource["Region"] = resource.pop("region") if "region" in resource else '-'
+                              resource["Status"] = resource.pop("status") if "status" in resource else '-'
+                              output.update({"AccountId":account_id, "AccountName":account_name, "Category": check["category"], 'DateTime': dt, 'Timestamp': ts, "CheckName": check["name"], "CheckId": check["id"]})
+                              output.update(resource)
+                              output = {k.lower(): v for k, v in output.items()}
+                              f.write(json.dumps(output, default=_json_serial) + "\n")
+                      except Exception as e: #pylint: disable=broad-exception-caught
+                          print(f'{type(e)}: {e}')
+              return TMP_FILE
+
+          def _isoformat(date_value, default='N/A'):
+              """ Converts a datetime value to ISO format string.
+              """
+              return date_value.isoformat() if isinstance(date_value, datetime) else default
+
+          def read_ta_priority(account_id, account_name):
+              """ Read recommendations and write to a file
+              """
+              trustedadvisor = assume_role(account_id, "trustedadvisor", REGIONS[0], ROLE_NAME)
+              try:
+                  recommendations = (trustedadvisor
+                      .get_paginator('list_recommendations')
+                      .paginate(type='priority')
+                      .search('recommendationSummaries[]')
+                  )
+                  with open(TMP_FILE_Priority, 'w', encoding='utf-8') as jsonfile:
+                      for recommendation in recommendations:
+                          # Get recommendation details including resolved date
+                          recommendation_details = (trustedadvisor
+                              .get_recommendation(recommendationIdentifier=recommendation['arn'])
+                              .get('recommendation', {})
+                          )
+                          # Get resources for this recommendation
+                          try:
+                              resources = list(trustedadvisor
+                                  .get_paginator('list_recommendation_resources')
+                                  .paginate(recommendationIdentifier=recommendation['arn'])
+                                  .search('recommendationResourceSummaries[]')
+                              )
+                          except trustedadvisor.exceptions.ClientError as e:
+                              print(f"Error getting resources for recommendation {recommendation['arn']}: {str(e)}")
+                              resources = []
+
+                          # Base recommendation data
+                          rec_data = {
+                              'recommendationArn': recommendation['arn'],
+                              'name': recommendation['name'],
+                              'description': recommendation_details['description'],
+                              'awsServices': recommendation.get('awsServices', 'N/A'),
+                              'createdAt': _isoformat(recommendation['createdAt']),
+                              'resolvedAt': _isoformat(recommendation_details['resolvedAt']),
+                              'lastUpdatedAt': _isoformat(recommendation['lastUpdatedAt']),
+                              'lifecycleStage': recommendation['lifecycleStage'],
+                              'recommendationStatus': recommendation['status'],
+                              'pillars': recommendation['pillars'],
+                              'source': recommendation['source'],
+                              'accountID': account_id,
+                              'accountName': account_name
+                          }
+                          for resource in (resources or [{}]):
+                              resource_data = rec_data.copy()
+                              resource_data.update({
+                                  'awsResourceId': resource.get('awsResourceId', 'N/A'),
+                                  'exclusionStatus': resource.get('exclusionStatus', 'N/A'),
+                                  'regionCode': resource.get('regionCode', 'N/A'),
+                                  'resourceStatus': resource.get('status', 'N/A')
+                              })
+                              jsonfile.write(json.dumps(resource_data) + '\n')
+
+              except Exception as e: #pylint: disable=broad-exception-caught
+                  print(f"Error processing TA-Priority: {str(e)}")
+                  raise
+              return TMP_FILE_Priority
+
+
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
@@ -260,8 +332,70 @@ Resources:
       Targets:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-priority-data/"
       Configuration: "{\"Version\":1.0,\"Grouping\":{\"TableGroupingPolicy\":\"CombineCompatibleSchemas\"}}"
 
+  # Add glue table for trusted advisor priority data
+  TAPriorityTable:
+    Type: AWS::Glue::Table
+    Properties:
+      DatabaseName: !Ref DatabaseName
+      CatalogId: !Ref AWS::AccountId
+      TableInput:
+        Name: trusted_advisor_priority_data
+        TableType: EXTERNAL_TABLE
+        StorageDescriptor:
+          Columns:
+            - Name: recommendationArn
+              Type: string
+            - Name: name
+              Type: string
+            - Name: description
+              Type: string
+            - Name: awsServices
+              Type: string
+            - Name: createdAt
+              Type: string
+            - Name: resolvedAt
+              Type: string
+            - Name: lastUpdatedAt
+              Type: string
+            - Name: lifecycleStage
+              Type: string
+            - Name: recommendationStatus
+              Type: string
+            - Name: pillars
+              Type: string
+            - Name: source
+              Type: string
+            - Name: accountID
+              Type: string
+            - Name: accountName
+              Type: string
+            - Name: awsResourceId
+              Type: string
+            - Name: exclusionStatus
+              Type: string
+            - Name: regionCode
+              Type: string
+            - Name: resourceStatus
+              Type: string
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-priority-data/"
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Parameters:
+              UPDATED_BY_CRAWLER: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              paths: recommendationArn,name,description,awsServices,createdAt,resolvedAt,lastUpdatedAt,lifecycleStage,recommendationStatus,pillars,source,accountID,accountName,awsResourceId,exclusionStatus,regionCode,resourceStatus
+        PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
