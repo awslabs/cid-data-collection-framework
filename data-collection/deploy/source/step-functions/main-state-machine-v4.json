@@ -173,7 +173,8 @@
                   "dc_account": "{% $states.input.dc_account %}",
                   "dc_region": "{% $states.input.dc_region %}",
                   "params": "{% $states.input.params %}",
-                  "main_exe_uuid": "{% $states.input.main_exe_uuid %}"
+                  "main_exe_uuid": "{% $states.input.main_exe_uuid %}",
+                  "stack_version": "{% $states.input.stack_version %}"
                 },
                 "Next": "DCLambdaErrorMetric"
               }
@@ -219,7 +220,8 @@
               "dc_account": "{% $states.input.dc_account %}",
               "dc_region": "{% $states.input.dc_region %}",
               "params": "{% $states.input.params %}",
-              "main_exe_uuid": "{% $states.input.main_exe_uuid %}"
+              "main_exe_uuid": "{% $states.input.main_exe_uuid %}",
+              "stack_version": "{% $states.input.stack_version %}"
             },
             "Next": "DCLambdaErrorLog",
             "Catch": [
@@ -235,7 +237,8 @@
                   "dc_account": "{% $states.input.dc_account %}",
                   "dc_region": "{% $states.input.dc_region %}",
                   "params": "{% $states.input.params %}",
-                  "main_exe_uuid": "{% $states.input.main_exe_uuid %}"
+                  "main_exe_uuid": "{% $states.input.main_exe_uuid %}",
+                  "stack_version": "{% $states.input.stack_version %}"
                 },
                 "Next": "DCLambdaErrorLog"
               }
@@ -269,7 +272,7 @@
                   "child-exe-uuid": "{% $split($states.context.Execution.Id, ':')[7] %}"
                 },
                 "Service": "StepFunction",
-                "StackVersion": "",
+                "StackVersion": "{% $states.input.stack_version %}",
                 "SubVersion": ""
               }
             },

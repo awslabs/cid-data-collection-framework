@@ -1375,7 +1375,6 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, standalone-v2, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        StackID: !Ref "AWS::StackId"
 
   HealthEventsModule:
     Type: AWS::CloudFormation::Stack
