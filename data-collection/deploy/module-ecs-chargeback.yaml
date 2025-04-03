@@ -1,6 +1,9 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Collects ECS Cluster and service data and places into a bucket in the management account
 Parameters:
+  StackID:
+    Type: String
+    Description: Arn of the main stack
   DatabaseName:
     Type: String
     Description: Name of the Athena database to be created to hold lambda information
@@ -160,6 +163,7 @@ Resources:
               logger.info(f"Event data: {event}")
               sub_uuid = {"lambda-request-id": context.aws_request_id, "lambda-log-group": context.log_group_name, "lambda-log-stream": context.log_stream_name}
               main_exe_uuid = event.get("main_exe_uuid", str(uuid.uuid4()))
+              stack_version = event.get("stack_version", "")
               total_services = 0
 
               try:
@@ -207,16 +211,16 @@ Resources:
                               error=exc
                           #log success or failure
                           create_log_entry(payer_id=payer_id, account_id=account_id, region=region, record_count=services_counter, location=location,
-                                          main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, error=error)
+                                          main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, error=error, stack_version=stack_version)
                   if total_services > 0:
                       client = boto3.client("s3")
                       client.upload_file(TMP_FILE, BUCKET, key)
                   return create_log_entry(payer_id=payer_id, account_id=account_id, region=", ".join(REGIONS), record_count=total_services, location=location,
-                                          main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, is_summary=True)
+                                          main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, is_summary=True, stack_version=stack_version)
 
               except Exception as exc: #pylint: disable=broad-exception-caught
                   create_log_entry(payer_id=payer_id, account_id=account_id, region=", ".join(REGIONS), record_count=total_services,
-                                  main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, error=exc)
+                                  main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, error=exc, stack_version=stack_version)
                   raise exc
 
           def assume_session(account_id, region):
@@ -235,7 +239,7 @@ Resources:
               return boto3.Session().get_available_regions('ecs')
 
           def create_log_entry(payer_id="", account_id=None, status_code=None, region="", module_function="data-collection-lambda", sub_code="",
-                              params="", record_count=0, description=None, location="", error=None, main_exe_uuid="", sub_uuid={}, is_summary=False, store_it=True): # pylint: disable=too-many-locals
+                              params="", record_count=0, record_context="", description=None, location="", error=None, main_exe_uuid="", sub_uuid={}, is_summary=False, store_it=True, stack_version="", subversion=""): # pylint: disable=too-many-locals
               """Format log entry for logging."""
               status_code, description = status_handler(error, record_count, is_summary, status_code, description)
               log_entry = {
@@ -255,7 +259,9 @@ Resources:
                   "DataLocation": location if record_count > 0 else "",
                   "MainExeUuid": main_exe_uuid,
                   "SubUuid": sub_uuid,
-                  "Service": "Lambda"
+                  "Service": "Lambda",
+                  "StackVersion": stack_version,
+                  "SubVersion": subversion
               }
               if status_code >= 400:
                   logger.error(description)
@@ -359,6 +365,7 @@ Resources:
         Account: !Ref AWS::AccountId
         Prefix: !Ref ResourcePrefix
         Bucket: !Ref DestinationBucket
+        DataCollectionStackID: !Ref StackID
 
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'

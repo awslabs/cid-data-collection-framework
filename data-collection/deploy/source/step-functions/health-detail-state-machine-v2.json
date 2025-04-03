@@ -18,7 +18,8 @@
         "EXE_START_TIME_SPLIT": "{% $split($states.context.Execution.StartTime, /[-:T.]/) %}",
         "MAP_KEY": "{% $states.input.file %}",
         "ACCOUNT": "{% $states.input.account %}",
-        "INGEST_TIME": "{% $states.input.ingestion_time %}"
+        "INGEST_TIME": "{% $states.input.ingestion_time %}",
+        "STACK_VERSION": "{% $states.input.stack_version %}"
       },
       "Next": "SetGlobalVariables2"
     },
@@ -62,7 +63,8 @@
           "module": "{% $MODULE %}",
           "prefix": "{% $PREFIX %}",
           "log_key_base": "{% $LOG_KEY_BASE %}",
-          "params": "{% $PARAMS %}"
+          "params": "{% $PARAMS %}",
+          "stack_version": "{% $STACK_VERSION %}"
         }
       },
       "ItemProcessor": {
@@ -84,20 +86,9 @@
                 "sub_uuid": "{% $states.input.BatchInput.sub_uuid %}",
                 "params": "{% $states.input.BatchInput.params %}",
                 "ingestion_time": "{% $states.input.BatchInput.ingestion_time %}",
+                "stack_version": "{% $states.input.BatchInput.stack_version %}",
                 "items": "{% $states.input.Items %}"
               }
-            },
-            "Output": {
-              "account": "{% $states.input.BatchInput.account %}",
-              "main_exe_uuid": "{% $states.input.BatchInput.main_exe_uuid %}",
-              "sub_uuid": "{% $merge([$states.input.BatchInput.sub_uuid, {'map-state-machine-exid': $split($states.context.Execution.Id, ':')[7]}]) %}",
-              "module": "{% $states.input.BatchInput.module %}",
-              "bucket": "{% $states.input.BatchInput.bucket %}",
-              "dc_account": "{% $states.input.BatchInput.dc_account %}",
-              "dc_region": "{% $states.input.BatchInput.dc_region %}",
-              "log_key_base": "{% $states.input.BatchInput.log_key_base %}",
-              "params": "{% $states.input.BatchInput.params %}",
-              "description": ""
             },
             "Catch": [
               {
@@ -114,6 +105,7 @@
                   "dc_region": "{% $states.input.BatchInput.dc_region %}",
                   "log_key_base": "{% $states.input.BatchInput.log_key_base %}",
                   "params": "{% $states.input.BatchInput.params %}",
+                  "stack_version": "{% $states.input.BatchInput.stack_version %}",
                   "description": "{% $states.errorOutput %}"
                 },
                 "Next": "DCLambdaErrorMetric"
@@ -162,7 +154,8 @@
               "dc_account": "{% $states.input.dc_account %}",
               "dc_region": "{% $states.input.dc_region %}",
               "log_key_base": "{% $states.input.log_key_base %}",
-              "params": "{% $states.input.params %}"
+              "params": "{% $states.input.params %}",
+              "stack_version": "{% $states.input.stack_version %}"
             },
             "Next": "DCLambdaErrorLog"
           },
@@ -190,7 +183,9 @@
                 "DataLocation": "",
                 "MainExeUuid": "{% $states.input.main_exe_uuid %}",
                 "SubUuid": "{% $states.input.sub_uuid %}",
-                "Service": "StepFunction"
+                "Service": "StepFunction",
+                "StackVersion": "{% $states.input.stack_version %}",
+                "SubVersion": ""
               }
             },
             "Output": {
@@ -316,7 +311,9 @@
           "DataLocation": "",
           "MainExeUuid": "{% $EXE_UUID %}",
           "SubUuid": "{% $SUB_UUID %}",
-          "Service": "StepFunction"
+          "Service": "StepFunction",
+          "StackVersion": "{% $STACK_VERSION %}",
+          "SubVersion": ""
         }
       },
       "Retry": [

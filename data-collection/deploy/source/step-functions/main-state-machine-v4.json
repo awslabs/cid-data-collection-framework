@@ -16,7 +16,8 @@
         "MOD_TYPE": "${CollectionType}",
         "EXE_UUID": "{% $split($states.context.Execution.Id, ':')[7] %}",
         "EXE_START_TIME_SPLIT": "{% $split($states.context.Execution.StartTime, /[-:T.]/) %}",
-        "EXE_START_TIME": "{% $replace($states.context.Execution.StartTime,'Z','') %}"
+        "EXE_START_TIME": "{% $replace($states.context.Execution.StartTime,'Z','') %}",
+        "STACK_ID": "${DataCollectionStackID}"
       },
       "Next": "SetGlobalVariables2"
     },
@@ -27,6 +28,18 @@
         "LOG_KEY_BASE": "{% 'logs/modules/'&$EXE_START_TIME_SPLIT[0]&'/'&$EXE_START_TIME_SPLIT[1]&'/'&$EXE_START_TIME_SPLIT[2]&'/'&$MODULE&'-sf-' %}",
         "CRAWLER_STATE_MACHINE": "{% 'arn:aws:states:'&$DATA_COLLECTION_REGION&':'&$DATA_COLLECTION_ACCOUNT&':stateMachine:'&$PREFIX&'CrawlerExecution-StateMachine' %}",
         "ACCT_COLLECTOR_LAMBDA": "{% 'arn:aws:lambda:'&$DATA_COLLECTION_REGION&':'&$DATA_COLLECTION_ACCOUNT&':function:'&$PREFIX&'account-collector-Lambda' %}"
+      },
+      "Next": "GetStackVersion"
+    },
+    "GetStackVersion": {
+      "Type": "Task",
+      "Arguments": {
+        "StackName": "{% $STACK_ID %}"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:cloudformation:describeStacks",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "STACK_VERSION": "{% ($match($states.result.Stacks[0].Description, /([0-9]+\\.[0-9]+\\.[0-9]+)/)).match %}"
       },
       "Next": "EntryLog"
     },
@@ -54,7 +67,9 @@
           "DataLocation": "",
           "MainExeUuid": "{% $EXE_UUID %}",
           "SubUuid": {},
-          "Service": "StepFunction"
+          "Service": "StepFunction",
+          "StackVersion": "{% $STACK_VERSION %}",
+          "SubVersion": ""
         }
       },
       "Retry": [
@@ -67,6 +82,11 @@
           "MaxAttempts": 3
         }
       ],
+      "Next": "Wait"
+    },
+    "Wait": {
+      "Type": "Wait",
+      "Seconds": 1,
       "Next": "AccountCollectorLambda"
     },
     "AccountCollectorLambda": {
@@ -77,10 +97,11 @@
       "Arguments": {
         "FunctionName": "{% $ACCT_COLLECTOR_LAMBDA %}",
         "Payload": {
-          "Module": "{% $MODULE %}",
-          "Type": "{% $MOD_TYPE %}",
-          "MainExeUuid": "{% $EXE_UUID %}",
-          "Params": "{% $PARAMS %}"
+          "module": "{% $MODULE %}",
+          "type": "{% $MOD_TYPE %}",
+          "main_exe_uuid": "{% $EXE_UUID %}",
+          "params": "{% $PARAMS %}",
+          "stack_version": "{% $STACK_VERSION %}"
         }
       },
       "Assign": {
@@ -98,9 +119,9 @@
             "description": "{% $states.errorOutput %}"
           },
           "Assign": {
-            "ExecutionStatus": 500
+            "ExecutionStatus": 520
           },
-          "Next": "AccountCollectorErrorMetric"
+          "Next": "ErrorMetric"
         }
       ],
       "Retry": [
@@ -114,36 +135,10 @@
         }
       ]
     },
-    "AccountCollectorErrorMetric": {
-      "Type": "Task",
-      "QueryLanguage": "JSONata",
-      "Resource": "arn:aws:states:::aws-sdk:cloudwatch:putMetricData",
-      "Arguments": {
-        "Namespace": "CID-DataCollection",
-        "MetricData": [
-          {
-            "MetricName": "Error",
-            "Value": 1,
-            "Unit": "Count",
-            "Dimensions": [
-              {
-                "Name": "Module",
-                "Value": "{% $MODULE %}"
-              }
-            ]
-          }
-        ]
-      },
-      "Output": {
-        "status_code": 500,
-        "description": "{% 'Step Function AccountCollector failed with error: '&$states.input.description %}"
-      },
-      "Next": "ExitLog"
-    },
     "DataCollectionMap": {
       "Type": "Map",
       "QueryLanguage": "JSONata",
-      "ToleratedFailurePercentage": 99,
+      "ToleratedFailurePercentage": 95,
       "ItemProcessor": {
         "ProcessorConfig": {
           "Mode": "DISTRIBUTED",
@@ -161,7 +156,8 @@
                 "account": "{% $states.input.account %}",
                 "params": "{% $states.input.params %}",
                 "main_exe_uuid": "{% $states.input.main_exe_uuid %}",
-                "prefix": "{% $states.input.prefix %}"
+                "prefix": "{% $states.input.prefix %}",
+                "stack_version": "{% $states.input.stack_version %}"
               }
             },
             "Catch": [
@@ -176,7 +172,8 @@
                   "bucket": "{% $states.input.bucket %}",
                   "dc_account": "{% $states.input.dc_account %}",
                   "dc_region": "{% $states.input.dc_region %}",
-                  "params": "{% $states.input.params %}"
+                  "params": "{% $states.input.params %}",
+                  "main_exe_uuid": "{% $states.input.main_exe_uuid %}"
                 },
                 "Next": "DCLambdaErrorMetric"
               }
@@ -221,9 +218,28 @@
               "bucket": "{% $states.input.bucket %}",
               "dc_account": "{% $states.input.dc_account %}",
               "dc_region": "{% $states.input.dc_region %}",
-              "params": "{% $states.input.params %}"
+              "params": "{% $states.input.params %}",
+              "main_exe_uuid": "{% $states.input.main_exe_uuid %}"
             },
-            "Next": "DCLambdaErrorLog"
+            "Next": "DCLambdaErrorLog",
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Output": {
+                  "account": "{% $states.input.account %}",
+                  "description": "{% $states.input.description&' and CloudWatch write failed.'%}",
+                  "module": "{% $states.input.module %}",
+                  "bucket": "{% $states.input.bucket %}",
+                  "dc_account": "{% $states.input.dc_account %}",
+                  "dc_region": "{% $states.input.dc_region %}",
+                  "params": "{% $states.input.params %}",
+                  "main_exe_uuid": "{% $states.input.main_exe_uuid %}"
+                },
+                "Next": "DCLambdaErrorLog"
+              }
+            ]
           },
           "DCLambdaErrorLog": {
             "Type": "Task",
@@ -231,25 +247,30 @@
             "QueryLanguage": "JSONata",
             "Arguments": {
               "Bucket": "{% $states.input.bucket %}",
-              "Key": "{% 'logs/modules/'&$split($states.context.Execution.StartTime, /[-:T.]/)[0]&'/'&$split($states.context.Execution.StartTime, /[-:T.]/)[1]&'/'&$split($states.context.Execution.StartTime, /[-:T.]/)[2]&'/'&$states.input.Module&'-sf-error'&$split($states.context.Execution.Id, ':')[7]&$random()&'.json' %}",
+              "Key": "{% 'logs/modules/'&$split($states.context.Execution.StartTime, /[-:T.]/)[0]&'/'&$split($states.context.Execution.StartTime, /[-:T.]/)[1]&'/'&$split($states.context.Execution.StartTime, /[-:T.]/)[2]&'/'&$states.input.module&'-sf-error'&$split($states.context.Execution.Id, ':')[7]&$random()&'.json' %}",
               "Body": {
                 "Timestamp": "{% $replace($now(), 'Z', '') %}",
                 "DataCollectionRegion": "{% $states.input.dc_region %}",
                 "DataCollectionAccountId": "{% $states.input.dc_account %}",
-                "Module": "{% $states.input.Module %}",
+                "Module": "{% $states.input.module %}",
                 "ModuleFunction": "sf-dc-lambda-error-log",
                 "Params": "{% $states.input.params %}",
                 "PayerId": "{% $states.input.account.payer_id %}",
                 "AccountId": "{% $states.input.account.account_id %}",
                 "Region": "",
-                "StatusCode": 501,
+                "StatusCode": 500,
                 "SubCode": "",
                 "RecordCount": 0,
                 "Description": "{% $states.input.description %}",
                 "DataLocation": "",
-                "MainExeUuid": "{% $split($states.context.Execution.Id, ':')[7] %}",
-                "SubUuid": {},
-                "Service": "StepFunction"
+                "MainExeUuid": "{% $states.input.main_exe_uuid %}",
+                "SubUuid": {
+                  "statemachine-id": "{% $states.context.StateMachine.Id %}",
+                  "child-exe-uuid": "{% $split($states.context.Execution.Id, ':')[7] %}"
+                },
+                "Service": "StepFunction",
+                "StackVersion": "",
+                "SubVersion": ""
               }
             },
             "Output": {
@@ -287,8 +308,11 @@
         }
       },
       "Output": {
-        "status_code": 200,
+        "account": 200,
         "description": "Account Map Step Function task completed successfully"
+      },
+      "Assign": {
+        "ExecutionStatus": 200
       },
       "Catch": [
         {
@@ -296,12 +320,11 @@
             "States.ALL"
           ],
           "Output": {
-            "status_code": 500,
             "description": "{% $states.errorOutput %}"
           },
-          "Next": "MapErrorMetric",
+          "Next": "ErrorMetric",
           "Assign": {
-            "ExecutionStatus": 500
+            "ExecutionStatus": 521
           }
         }
       ],
@@ -318,7 +341,7 @@
       },
       "Next": "CrawlerStepFunction"
     },
-    "MapErrorMetric": {
+    "ErrorMetric": {
       "Type": "Task",
       "QueryLanguage": "JSONata",
       "Resource": "arn:aws:states:::aws-sdk:cloudwatch:putMetricData",
@@ -339,10 +362,23 @@
         ]
       },
       "Output": {
-        "status_code": 500,
-        "description": "Step Function DataCollectionMap failed most or all executions"
+        "description": "Step Function DataCollectionMap failed most or all executions (States.ExceedToleratedFailureThreshold)"
       },
-      "Next": "ExitLog"
+      "Next": "ExitLog",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Output": {
+            "description": "Step Function DataCollectionMap failed most or all executions (States.ExceedToleratedFailureThreshold) and CloudWatch write failed."
+          },
+          "Assign": {
+            "ExecutionStatus": 523
+          },
+          "Next": "ExitLog"
+        }
+      ]
     },
     "CrawlerStepFunction": {
       "Type": "Task",
@@ -355,9 +391,12 @@
           "crawlers": "{% $CRAWLERS %}"
         }
       },
+      "Assign": {
+        "ExecutionStatus": 200
+      },
       "Output": {
-        "status_code": 200,
-        "description": "Step Function execution completed successfully"
+        "description": "Step Function execution completed successfully",
+        "result": "{% $states.result %}"
       },
       "Catch": [
         {
@@ -366,11 +405,10 @@
           ],
           "Next": "ExitLog",
           "Output": {
-            "status_code": 500,
-            "description": "{% 'Step Function DataCollectionMap failed with error: '&$states.errorOutput %}"
+            "description": "{% 'Crawler StepFunction failed with error: '&$states.errorOutput %}"
           },
           "Assign": {
-            "ExecutionStatus": 500
+            "ExecutionStatus": 522
           }
         }
       ],
@@ -393,14 +431,18 @@
           "PayerId": "",
           "AccountId": "",
           "Region": "",
-          "StatusCode": "{% $states.input.status_code %}",
+          "StatusCode": "{% $ExecutionStatus %}",
           "SubCode": "",
           "RecordCount": 0,
           "description": "{% $states.input.description %}",
           "DataLocation": "",
           "MainExeUuid": "{% $EXE_UUID %}",
-          "SubUuid": {},
-          "Service": "StepFunction"
+          "SubUuid": {
+            "statemachine-id": "{% $states.context.StateMachine.Id %}"
+          },
+          "Service": "StepFunction",
+          "StackVersion": "{% $STACK_VERSION %}",
+          "SubVersion": ""
         }
       },
       "Retry": [

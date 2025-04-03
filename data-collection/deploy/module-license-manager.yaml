@@ -1,6 +1,9 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Retrieves AWS Marketplace License and grant information from AWS License manager from across an organization
 Parameters:
+  StackID:
+    Type: String
+    Description: Arn of the main stack
   DatabaseName:
     Type: String
     Description: Name of the Athena database to be created to hold lambda information
@@ -307,6 +310,7 @@ Resources:
         Account: !Ref AWS::AccountId
         Prefix: !Ref ResourcePrefix
         Bucket: !Ref DestinationBucket
+        DataCollectionStackID: !Ref StackID
 
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'

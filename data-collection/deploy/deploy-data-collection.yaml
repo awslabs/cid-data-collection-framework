@@ -120,14 +120,14 @@ Mappings:
     eu-west-3:      {CodeBucket: aws-managed-cost-intelligence-dashboards-eu-west-3 }
     sa-east-1:      {CodeBucket: aws-managed-cost-intelligence-dashboards-sa-east-1 }
     us-east-1:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-east-1 }
-    us-east-2:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-east-2 }
+    us-east-2:      {CodeBucket: aws-managed-cost-intel ligence-dashboards-us-east-2 }
     us-west-1:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-west-1 }
     us-west-2:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-west-2 }
   StepFunctionCode:
     main-state-machine-v4:           {TemplatePath: cfn/data-collection/source/step-functions/main-state-machine-v4.json}
     crawler-v2:                      {TemplatePath: cfn/data-collection/source/step-functions/crawler-state-machine-v2.json}
     standalone-v2:                   {TemplatePath: cfn/data-collection/source/step-functions/standalone-state-machine-v2.json}
-    health-detail-state-machine-v2-1:  {TemplatePath: cfn/data-collection/source/step-functions/health-detail-state-machine-v2-1.json}
+    health-detail-state-machine-v2:  {TemplatePath: cfn/data-collection/source/step-functions/health-detail-state-machine-v2.json}
 
 Parameters:
   DestinationBucket:
@@ -897,7 +897,7 @@ Resources:
                   - s3:GetObject
                   - s3:PutObject
                 Resource: !Sub '${S3Bucket.Arn}/*'
-        - PolicyName: "CloudWatch-ErrorLogging" #Used for logging processing errors to CloudWatch
+        - PolicyName: "CloudWatchErrorLogging" #Used for logging processing errors to CloudWatch
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -905,6 +905,18 @@ Resources:
                 Action:
                   - cloudwatch:PutMetricData
                 Resource: '*'
+        - PolicyName: "CloudFormationStackVersionRead" #Used for reading the deployed version number of the stack
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - cloudformation:ListStacks
+                Resource: '*'
+              - Effect: "Allow"
+                Action:
+                  - cloudformation:DescribeStacks
+                Resource: !Ref "AWS::StackId"
 
   StepFunctionExecutionRoleInvokeAccountCollectorPolicy:
     Type: 'AWS::IAM::Policy'
@@ -984,6 +996,8 @@ Resources:
           - { Name: mainexeuuid,                 Type: string }
           - { Name: subuuid,                     Type: string }
           - { Name: service,                     Type: string }
+          - { Name: stackversion,                Type: string }
+          - { Name: subversion,                  Type: string }
           InputFormat: org.apache.hadoop.mapred.TextInputFormat
           OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
           Location: !Sub "s3://${DestinationBucket}${AWS::AccountId}/logs/modules/"
@@ -1022,6 +1036,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        StackID: !Ref "AWS::StackId"
 
   RightsizeModule:
     Type: AWS::CloudFormation::Stack
@@ -1043,6 +1058,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        StackID: !Ref "AWS::StackId"
 
   CostAnomalyModule:
     Type: AWS::CloudFormation::Stack
@@ -1065,6 +1081,7 @@ Resources:
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         LambdaManageGlueTableARN: !GetAtt LambdaManageGlueTable.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        StackID: !Ref "AWS::StackId"
 
   SupportCasesModule:
     Type: AWS::CloudFormation::Stack
@@ -1086,6 +1103,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        StackID: !Ref "AWS::StackId"
 
   BackupModule:
     Type: AWS::CloudFormation::Stack
@@ -1107,6 +1125,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        StackID: !Ref "AWS::StackId"
 
   InventoryCollectorModule:
     Type: AWS::CloudFormation::Stack
@@ -1134,6 +1153,7 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
+        StackID: !Ref "AWS::StackId"
 
   PricingModule:
     Type: AWS::CloudFormation::Stack
@@ -1157,6 +1177,7 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
+        StackID: !Ref "AWS::StackId"
 
   ComputeOptimizerModule:
     Type: AWS::CloudFormation::Stack
@@ -1182,6 +1203,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        StackID: !Ref "AWS::StackId"
 
   EcsChargebackModule:
     Type: AWS::CloudFormation::Stack
@@ -1208,6 +1230,7 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
+        StackID: !Ref "AWS::StackId"
 
   RDSUsageModule:
     Type: AWS::CloudFormation::Stack
@@ -1234,6 +1257,7 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
+        StackID: !Ref "AWS::StackId"
 
   EUCUsageModule:
     Type: AWS::CloudFormation::Stack
@@ -1260,6 +1284,7 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
+        StackID: !Ref "AWS::StackId"
 
   OrgDataModule:
     Type: AWS::CloudFormation::Stack
@@ -1281,6 +1306,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        StackID: !Ref "AWS::StackId"
 
   BudgetsModule:
     Type: AWS::CloudFormation::Stack
@@ -1302,6 +1328,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        StackID: !Ref "AWS::StackId"
 
   TransitGatewayModule:
     Type: AWS::CloudFormation::Stack
@@ -1328,6 +1355,7 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
+        StackID: !Ref "AWS::StackId"
 
   AWSFeedsModule:
     Type: AWS::CloudFormation::Stack
@@ -1347,6 +1375,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, standalone-v2, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        StackID: !Ref "AWS::StackId"
 
   HealthEventsModule:
     Type: AWS::CloudFormation::Stack
@@ -1368,7 +1397,8 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        DetailStepFunctionTemplate: !FindInMap [StepFunctionCode, health-detail-state-machine-v2-1, TemplatePath]
+        DetailStepFunctionTemplate: !FindInMap [StepFunctionCode, health-detail-state-machine-v2, TemplatePath]
+        StackID: !Ref "AWS::StackId"
 
   LicenseManagerModule:
     Type: AWS::CloudFormation::Stack
@@ -1390,6 +1420,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        StackID: !Ref "AWS::StackId"
 
   ServiceQuotasModule:
     Type: AWS::CloudFormation::Stack
@@ -1416,6 +1447,7 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
+        StackID: !Ref "AWS::StackId"
 
   QuickSightModule:
     Type: AWS::CloudFormation::Stack
@@ -1435,6 +1467,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, standalone-v2, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        StackID: !Ref "AWS::StackId"
 
   AccountCollector:
     Type: AWS::CloudFormation::Stack

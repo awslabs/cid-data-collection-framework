@@ -159,10 +159,11 @@ Resources:
                 global MODULE
                 logger.info(f"Incoming event: {event}")
                 sub_uuid = {"lambda-request-id": context.aws_request_id, "lambda-log-group": context.log_group_name, "lambda-log-stream": context.log_stream_name}
-                account_type = event.get("Type", '').lower()
-                MODULE = event.get("Module", '').lower()
-                main_exe_uuid = event.get("MainExeUuid", str(uuid.uuid4()))
-                params = event.get("Params", "")
+                account_type = event.get("type", '').lower()
+                MODULE = event.get("module", '').lower()
+                main_exe_uuid = event.get("main_exe_uuid", str(uuid.uuid4()))
+                params = event.get("params", "")
+                stack_version = event.get("stack_version", "")
                 try:
                     # need to confirm that the Lambda concurrency limit is sufficient to avoid throttling
                     lambda_limit = boto3.client('lambda').get_account_settings()['AccountLimit']['ConcurrentExecutions']
@@ -182,6 +183,8 @@ Resources:
                         account_type = None
                         raise Exception(STATUS_NOT_ACCEPTABLE) #pylint: disable=broad-exception-raised
 
+                    context = "linked" if account_type == "linked" or account_type == "euc" else "payer"
+
                     account_iterator = functions[account_type]
                     logger.info(f"Looking for accounts")
                     with open(TMP_FILE, "w", encoding='utf-8') as f:
@@ -195,6 +198,7 @@ Resources:
                             account['dc_region'] = DC_REGION
                             account['params'] = params
                             account['prefix'] = PREFIX
+                            account['stack_version'] = stack_version
                             if count > 0:
                                 f.write(",\n")
                             f.write(json.dumps(account))
@@ -209,7 +213,7 @@ Resources:
                     s3.upload_file(TMP_FILE, Bucket=BUCKET, Key=key)
                     location = f"s3://{BUCKET}/{key}"
                     log_entry = create_log_entry(module_function='account-collector-lambda', params=params, region="us-east-1", record_count=count,
-                                                location=location, main_exe_uuid=main_exe_uuid, record_context="account", sub_uuid=sub_uuid)
+                                                location=location, main_exe_uuid=main_exe_uuid, record_context=f"{context} account(s)", sub_uuid=sub_uuid, stack_version=stack_version)
                     return {'statusCode': 200, 'accountList': key, 'bucket': BUCKET, 'logEntry': log_entry['logEntry']}
                 except Exception as exc: #pylint: disable=broad-exception-caught
                     exc_msg = str(exc)
@@ -227,7 +231,8 @@ Resources:
                     else:
                         status_code = None
                         description = None
-                    create_log_entry(module_function='account-collector-lambda', params=params, region="us-east-1", status_code=status_code, description=description, error=exc, main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid)
+                    create_log_entry(module_function='account-collector-lambda', params=params, region="us-east-1", status_code=status_code,
+                                    description=description, error=exc, main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, stack_version=stack_version)
                     raise exc
 
             def get_all_payers():
@@ -244,8 +249,6 @@ Resources:
                             account_id = ssm.get_parameter(Name=ssm_key)['Parameter']['Value']
                         except ssm.exceptions.ParameterNotFound:
                             logger.info(f'Not found ssm parameter {ssm_key}. Will use Management Account Id {payer_id}')
-                    yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id})}
-                            logger.warning(f'Not found ssm parameter {ssm_key}. Will use Management Account Id {payer_id}')
                     yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id}), "main_exe_uuid": ""}
 
             def iterate_linked_accounts():
@@ -334,7 +337,7 @@ Resources:
                 )
 
             def create_log_entry(payer_id="", account_id=None, status_code=None, region="", module_function="data-collection-lambda", sub_code="",
-                                params="", record_count=0, record_context="", description=None, location="", error=None, main_exe_uuid="", sub_uuid={}, is_summary=False, store_it=True): # pylint: disable=too-many-locals
+                                params="", record_count=0, record_context="", description=None, location="", error=None, main_exe_uuid="", sub_uuid={}, is_summary=False, store_it=True, stack_version="", subversion=""): # pylint: disable=too-many-locals
                 """Format log entry for logging."""
                 status_code, description = status_handler(error, record_count, is_summary, status_code, description, record_context)
                 log_entry = {
@@ -354,7 +357,9 @@ Resources:
                     "DataLocation": location if record_count > 0 else "",
                     "MainExeUuid": main_exe_uuid,
                     "SubUuid": sub_uuid,
-                    "Service": "Lambda"
+                    "Service": "Lambda",
+                    "StackVersion": stack_version,
+                    "SubVersion": subversion
                 }
                 if status_code >= 400:
                     logger.error(description)

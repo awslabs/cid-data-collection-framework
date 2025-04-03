@@ -1,6 +1,9 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Retrieves AWS Health Events details across AWS organization
 Parameters:
+  StackID:
+    Type: String
+    Description: Arn of the main stack
   DatabaseName:
     Type: String
     Description: Name of the Athena database to be created to hold lambda information
@@ -341,6 +344,7 @@ Resources:
               sub_uuid = event.get("sub_uuid", {})
               sub_uuid = {"lambda-request-id": context.aws_request_id, "lambda-log-group": context.log_group_name, "lambda-log-stream": context.log_stream_name}
               params = event.get("params", "")
+              stack_version = event.get("stack_version", "")
               account_id = ""
               payer_id = ""
 
@@ -417,7 +421,8 @@ Resources:
                               "account": account,
                               "ingestion_time": int(round(ingestion_time.timestamp())),
                               "main_exe_uuid": main_exe_uuid,
-                              "params": "detail"
+                              "params": "detail",
+                              "stack_version": stack_version
                           }
                           sf_input = json.dumps(sf_input).replace('"', '\"') # need to escape the json for SF
                           sf.start_execution(stateMachineArn=DETAIL_SM_ARN, input=sf_input) # launch the detail gathering SF
@@ -447,7 +452,7 @@ Resources:
                       #raise Exception("Testing SF error flow")
 
                   return create_log_entry(payer_id=payer_id, account_id=account_id, region=region, params=params, record_count=count, location=location,
-                                          main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid)
+                                          main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, stack_version=stack_version)
 
               except Exception as exc: #pylint: disable=broad-exception-caught
                   is_not_activated = 'Organizational View feature is not enabled' in str(exc)
@@ -455,11 +460,11 @@ Resources:
                   description = None if not is_not_activated else (f'Payer {account_id} does not have Organizational View. '
                                                                   'See https://docs.aws.amazon.com/health/latest/ug/enable-organizational-view-in-health-console.html')
                   create_log_entry(payer_id=payer_id, account_id=account_id, region=region, params=params, record_count=count,
-                                  main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, description=description, status_code=status_code, error=exc)
+                                  main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, description=description, status_code=status_code, error=exc, stack_version=stack_version)
                   raise exc
 
           def create_log_entry(payer_id="", account_id=None, status_code=None, region="", module_function="data-collection-lambda", sub_code="",
-                              params="", record_count=0, description=None, location="", error=None, main_exe_uuid="", sub_uuid={}, is_summary=False, store_it=True): # pylint: disable=too-many-locals
+                              params="", record_count=0, record_context="", description=None, location="", error=None, main_exe_uuid="", sub_uuid={}, is_summary=False, store_it=True, stack_version="", subversion=""): # pylint: disable=too-many-locals
               """Format log entry for logging."""
               status_code, description = status_handler(error, record_count, is_summary, status_code, description)
               log_entry = {
@@ -479,7 +484,9 @@ Resources:
                   "DataLocation": location if record_count > 0 else "",
                   "MainExeUuid": main_exe_uuid,
                   "SubUuid": sub_uuid,
-                  "Service": "Lambda"
+                  "Service": "Lambda",
+                  "StackVersion": stack_version,
+                  "SubVersion": subversion
               }
               if status_code >= 400:
                   logger.error(description)
@@ -585,6 +592,7 @@ Resources:
         Account: !Ref AWS::AccountId
         Prefix: !Ref ResourcePrefix
         Bucket: !Ref DestinationBucket
+        DataCollectionStackID: !Ref StackID
 
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'
