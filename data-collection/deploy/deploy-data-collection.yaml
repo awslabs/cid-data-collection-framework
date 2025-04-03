@@ -120,7 +120,7 @@ Mappings:
     eu-west-3:      {CodeBucket: aws-managed-cost-intelligence-dashboards-eu-west-3 }
     sa-east-1:      {CodeBucket: aws-managed-cost-intelligence-dashboards-sa-east-1 }
     us-east-1:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-east-1 }
-    us-east-2:      {CodeBucket: aws-managed-cost-intel ligence-dashboards-us-east-2 }
+    us-east-2:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-east-2 }
     us-west-1:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-west-1 }
     us-west-2:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-west-2 }
   StepFunctionCode:
