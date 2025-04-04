@@ -342,7 +342,7 @@ Resources:
               count = 0
               main_exe_uuid = event.get("main_exe_uuid", str(uuid.uuid4()))
               sub_uuid = event.get("sub_uuid", {})
-              sub_uuid = {"lambda-request-id": context.aws_request_id, "lambda-log-group": context.log_group_name, "lambda-log-stream": context.log_stream_name}
+              sub_uuid.update({"lambda-request-id": context.aws_request_id, "lambda-log-group": context.log_group_name, "lambda-log-stream": context.log_stream_name})
               params = event.get("params", "")
               stack_version = event.get("stack_version", "")
               account_id = ""

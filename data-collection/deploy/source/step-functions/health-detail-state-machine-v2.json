@@ -30,9 +30,50 @@
         "LOG_KEY_BASE": "{% 'logs/modules/'&$EXE_START_TIME_SPLIT[0]&'/'&$EXE_START_TIME_SPLIT[1]&'/'&$EXE_START_TIME_SPLIT[2]&'/'&$MODULE&'detail-sf-' %}",
         "CRAWLER_STATE_MACHINE": "{% 'arn:aws:states:'&$DATA_COLLECTION_REGION&':'&$DATA_COLLECTION_ACCOUNT&':stateMachine:'&$PREFIX&'CrawlerExecution-StateMachine' %}",
         "SUB_UUID": {
-          "child-state-machine-exid": "{% $CHILD_UUID %}"
+          "parent-state-machine-exid": "{% $PARENT_UUID %}"
         }
       },
+      "Next": "EntryLog"
+    },
+    "EntryLog": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:s3:putObject",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "Bucket": "{% $BUCKET %}",
+        "Key": "{% $LOG_KEY_BASE&'entry-'&$EXE_UUID&'.json' %}",
+        "Body": {
+          "Timestamp": "{% $replace($now(), 'Z', '') %}",
+          "DataCollectionRegion": "{% $DATA_COLLECTION_REGION %}",
+          "DataCollectionAccountId": "{% $DATA_COLLECTION_ACCOUNT %}",
+          "Module": "{% $MODULE %}",
+          "ModuleFunction": "sf-entry",
+          "Params": "{% $PARAMS %}",
+          "PayerId": "",
+          "AccountId": "",
+          "Region": "",
+          "StatusCode": 200,
+          "SubCode": "",
+          "RecordCount": 0,
+          "Description": "Step Function entered",
+          "DataLocation": "",
+          "MainExeUuid": "{% $EXE_UUID %}",
+          "SubUuid": "{% $SUB_UUID %}",
+          "Service": "StepFunction",
+          "StackVersion": "{% $STACK_VERSION %}",
+          "SubVersion": ""
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3
+        }
+      ],
       "Next": "DataCollectionMap"
     },
     "DataCollectionMap": {
@@ -55,7 +96,6 @@
           "account": "{% $ACCOUNT %}",
           "ingestion_time": "{% $INGEST_TIME %}",
           "main_exe_uuid": "{% $EXE_UUID %}",
-          "child_uuid": "{% $CHILD_UUID %}",
           "sub_uuid": "{% $SUB_UUID %}",
           "bucket": "{% $BUCKET %}",
           "dc_account": "{% $DATA_COLLECTION_ACCOUNT %}",
