@@ -1,5 +1,6 @@
+#https://github.com/awslabs/cid-data-collection-framework/blob/main/security-hub/deploy/module-securityhub.yaml
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Retrieve AWS Security Hub details across AWS organizations v0.0.3
+Description: Retrieve AWS Security Hub details across AWS organizations v0.0.3 - AWS Solution SO9011
 
 Metadata:
   AWS::CloudFormation::Interface:
