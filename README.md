@@ -1,4 +1,4 @@
-## Cloud Intelligence Dashboaeds - Data Collection
+## Cloud Intelligence Dashboards - Data Collection
 
 ## Table of Contents
 1. [Overview](#Overview)
@@ -57,9 +57,7 @@ See more in [data-exports](/data-exports).
 
 5. Advanced Cloud Intelligence Dashboards leverage [Amazon Athena](https://aws.amazon.com/athena/) and [Amazon QuickSight](https://aws.amazon.com/quicksight/) for comprehensive data analysis.
 
-See more in [data-collection](/data-collection).
-
-
+See more details in [data-collection](/data-collection).
 
 
 ## Cost
