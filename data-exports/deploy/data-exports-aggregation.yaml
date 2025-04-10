@@ -117,6 +117,23 @@ Parameters:
     Type: String
     Description: Leave Empty. A Bucket name for optional supplementary data replication. If not empty, the export data will be replicated to this bucket in addition to the default replication destination. Keep it empty if unsure.
     Default: ''
+  AddScheduleForBlockingWrite:
+    Type: String
+    Description: 'Set yes to schedule Disabling/Enabling schedule to stop CUR replication for a short period of time to secure QuickSight Dataset refresh.'
+    Default: "no"
+    AllowedValues: ["yes", "no"]
+  DisableWriteCronSchedule:
+    Type: String
+    Description: 'Cron expression for disabling replication (UTC)'
+    Default: '0 1 * * ? *'
+    AllowedPattern: '^[0-9*,\-/\s?]+$'
+    ConstraintDescription: Must be a valid cron expression
+  EnableWriteCronSchedule:
+    Type: String
+    Description: 'Cron expression for enabling replication (UTC)'
+    Default: '0 3 * * ? *'
+    AllowedPattern: '^[0-9*,\-/\s?]+$'
+    ConstraintDescription: Must be a valid cron expression
 
 Conditions:
   EmptySourceAccountIds: !Equals [ !Ref SourceAccountIds, '']
@@ -162,6 +179,10 @@ Conditions:
   NeedLakeFormationEnabledCOH:    !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageCOH]
   NeedLakeFormationEnabledCUR2:   !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageCUR2]
   NeedLakeFormationEnabledFOCUS:  !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageFOCUS]
+  DeployWriteBlocker:
+    Fn::And:
+      - !Condition IsDestinationAccount
+      - !Equals [!Ref AddScheduleForBlockingWrite, "yes"]
 
 Mappings:
   DataExports:
@@ -501,6 +522,118 @@ Resources:
                 Resource:
                   - !Sub "arn:${AWS::Partition}:s3:::${ResourcePrefix}-${DestinationAccountId}-data-exports/*/${AWS::AccountId}/*"
                   - !If [NonEmptySecondaryDestinationBucket, !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}/*/${AWS::AccountId}/*", !Ref 'AWS::NoValue']
+
+  BucketWriteBlockerLambdaRole:
+    Type: AWS::IAM::Role
+    Condition: DeployWriteBlocker
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: BucketPolicyAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketPolicy
+                  - s3:PutBucketPolicy
+                Resource: !GetAtt DestinationS3.Arn
+
+  BucketWriteBlockerPolicyLambda:
+    Type: AWS::Lambda::Function
+    Condition: DeployWriteBlocker
+    Properties:
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      FunctionName: !Sub ${ResourcePrefix}-CID-WriteBlocker
+      Role: !GetAtt BucketWriteBlockerLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import boto3
+
+          POLICY_SID = os.environ['POLICY_SID']
+          BUCKET_NAME = os.environ['BUCKET_NAME']
+          s3 = boto3.client('s3')
+
+          def lambda_handler(event, context):
+              action = event.get('action', 'enable')  # 'enable' or 'disable'
+              try:
+                  policy = json.loads(s3.get_bucket_policy(Bucket=BUCKET_NAME)['Policy'])
+                  # Find and modify the policy statement
+                  for statement in policy['Statement']:
+                      if statement.get('Sid') == POLICY_SID:
+                          statement['Effect'] = 'Allow' if action == 'enable' else 'Deny'
+                          break
+                  else:
+                      raise Exception(f'{POLICY_SID} statement not found in policy')
+                  s3.put_bucket_policy(Bucket=BUCKET_NAME, Policy=json.dumps(policy))
+                  return {'statusCode': 200, 'body': f'Successfully {action}d {POLICY_SID} statement'}
+              except Exception as e:
+                  return {'statusCode': 500, 'body': str(e) }
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationS3
+          POLICY_SID: 'AllowReplicationWrite'
+      MemorySize: 128
+      Timeout: 60
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: 'W89'
+            reason: "This Lambda does not require VPC"
+          - id: 'W92'
+            reason: "One Time execution. No need for ReservedConcurrentExecutions"
+  DisableRuleSchedule:
+    Type: AWS::Events::Rule
+    Condition: DeployWriteBlocker
+    Properties:
+      Description: !Sub "Schedule for disabling replication using cron: ${DisableWriteCronSchedule}"
+      ScheduleExpression: !Sub "cron(${DisableWriteCronSchedule})"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt BucketWriteBlockerPolicyLambda.Arn
+          Id: "DisableReplicationTarget"
+          Input: '{"action": "disable"}'
+
+  EnableRuleSchedule:
+    Type: AWS::Events::Rule
+    Condition: DeployWriteBlocker
+    Properties:
+      Description: !Sub "Schedule for enabling replication using cron: ${EnableWriteCronSchedule}"
+      ScheduleExpression: !Sub "cron(${EnableWriteCronSchedule})"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt BucketWriteBlockerPolicyLambda.Arn
+          Id: "EnableReplicationTarget"
+          Input: '{"action": "enable"}'
+
+  LambdaPermissionDisable:
+    Type: AWS::Lambda::Permission
+    Condition: DeployWriteBlocker
+    Properties:
+      FunctionName: !Ref BucketWriteBlockerPolicyLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DisableRuleSchedule.Arn
+
+  LambdaPermissionEnable:
+    Type: AWS::Lambda::Permission
+    Condition: DeployWriteBlocker
+    Properties:
+      FunctionName: !Ref BucketWriteBlockerPolicyLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EnableRuleSchedule.Arn
 
   # CUR2
 
