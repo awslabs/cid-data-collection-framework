@@ -129,7 +129,7 @@ Resources:
         Rules:
           - Id: Object&Version Expiration
             Status: Enabled
-            NoncurrentVersionExpirationInDays: 32 # 1 month
+            NoncurrentVersionExpirationInDays: 1
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -281,8 +281,8 @@ Resources:
         Rules:
           - Id: Object&Version Expiration
             Status: Enabled
-            NoncurrentVersionExpirationInDays: 32 # 1 month
-            ExpirationInDays: 64 # 2 months
+            NoncurrentVersionExpirationInDays: 1
+            ExpirationInDays: 7
     Metadata:
       cfn_nag:
         rules_to_suppress:
