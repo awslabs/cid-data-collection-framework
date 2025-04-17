@@ -6,6 +6,9 @@ This projects demonstrates usage of AWS API for collecting various types of usag
 
 For deployment and additional information reference to the [documentation](https://catalog.workshops.aws/awscid/data-collection).
 
+[![Documentation](/.images/documentation.svg)](https://catalog.workshops.aws/awscid/data-collection)
+
+
 ### Architecture
 
 ![Architecture](/.images/architecture-data-collection-detailed.png)
