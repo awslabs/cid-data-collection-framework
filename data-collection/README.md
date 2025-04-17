@@ -50,7 +50,7 @@ List of modules and objects collected:
 2. Deploy the Data Collection Stack to the Data Collection AWS Account
 
 
-For deployment and further information please reference to this [documentation](https://catalog.workshops.aws/awscid/data-collection).
+For deployment and further information please reference to this [documentation](https://catalog.workshops.aws/awscid/data-collection).  
 [![Documentation](/.images/documentation.svg)](https://catalog.workshops.aws/awscid/data-collection)
 
 
