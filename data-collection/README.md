@@ -43,7 +43,7 @@ List of modules and objects collected:
 
 ### Deployment Overview
 
-![Deployment Architecture](.images/architecture-data-collection-deploy.png)
+![Deployment Architecture](/.images/architecture-data-collection-deploy.png)
 
 1. Deploy the Advanced Data Collection Permissions CloudFormation stack to Management (Payer) AWS Account. The Permissions CloudFormation stack in the Management (Payer) Account also deploys Permissions stacks to each of Linked accounts via StackSets.
 
@@ -51,7 +51,7 @@ List of modules and objects collected:
 
 
 For deployment and further information please reference to this [documentation](https://catalog.workshops.aws/awscid/data-collection).
-[![Documentation](.images/documentation.svg)](https://catalog.workshops.aws/awscid/data-collection)
+[![Documentation](/.images/documentation.svg)](https://catalog.workshops.aws/awscid/data-collection)
 
 
 ### Contributing
