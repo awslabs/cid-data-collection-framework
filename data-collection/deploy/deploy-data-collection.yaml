@@ -905,6 +905,10 @@ Resources:
                 Action:
                   - cloudwatch:PutMetricData
                 Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: CID-DataCollection
+
         - PolicyName: "CloudFormationStackVersionRead" #Used for reading the deployed version number of the stack
           PolicyDocument:
             Version: "2012-10-17"
