@@ -45,7 +45,16 @@ For customers with additional requirements, an enhanced architecture is availabl
 
 7. Athena's reading process can be affected by writing operations. When replication arrives, it might fail to update datasets, especially with high volumes of data. In such cases, consider scheduling temporary disabling and re-enabling of the Amazon S3 bucket policy that allows replication. Since exports typically arrive three times daily, this temporary deactivation has minimal side effects.
 
-8. Some customers might need to store data exports to secondary destinations for archiving or reporting at a higher organizational level. You can specify a secondary bucket to receive the data in these cases.
+8. Some customers might need to store data exports to secondary destinations for archiving or reporting at a higher organizational level or to staging environment. You can specify a secondary bucket to receive the data in these cases.
+
+### Using Secondary Replication Bucket
+There can be various situations where customers need to replicate data exports to multiple destinations. One common scenario involves a Business Unit requiring exports for one or more AWS Organizations data while simultaneously allowing Headquarters to access these same exports data for a consolidated view across all business units. 
+
+To accomplish this, both the Headquarters and Business Unit can implement separate data export destination stacks. Business Unit administrators, working from their management account, can specify a target bucket located within the Headquarters stack, enabling seamless data replication to both locations. 
+
+Other scenario can be a replicating data to a staging environment. 
+
+![Secondary Replication Bucket](/.images/architecture-data-export-replication-to-secondary.png)
 
 ## Legacy Cost and Usage Report
 Legacy AWS Cost and Usage Reports (Legacy CUR) can still be used for Cloud Intelligence Dashboards and other use cases.

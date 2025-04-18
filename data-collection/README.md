@@ -6,6 +6,9 @@ This projects demonstrates usage of AWS API for collecting various types of usag
 
 For deployment and additional information reference to the [documentation](https://catalog.workshops.aws/awscid/data-collection).
 
+[![Documentation](/.images/documentation.svg)](https://catalog.workshops.aws/awscid/data-collection)
+
+
 ### Architecture
 
 ![Architecture](/.images/architecture-data-collection-detailed.png)
@@ -41,31 +44,19 @@ List of modules and objects collected:
 | `quicksight`                 |  [Amazon QuickSight](https://aws.amazon.com/quicksight/)    | Data Collection Account | Collects QuickSight User and Group information in the Data Collection Account only |
 
 
-### Installation
+### Deployment Overview
 
-#### 1. In Management Account(s)
+![Deployment Architecture](/.images/architecture-data-collection-deploy.png)
 
-The Management Accounts stack makes use of [stack sets](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/what-is-cfnstacksets.html) configured to use [service-managed permissions](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-concepts.html#stacksets-concepts-stackset-permission-models) to deploy stack instances to linked accounts in the AWS Organization.
+1. Deploy the Advanced Data Collection Permissions CloudFormation stack to Management (Payer) AWS Account. The Permissions CloudFormation stack in the Management (Payer) Account also deploys Permissions stacks to each of Linked accounts via StackSets.
 
-Before creating the Management Accounts stack, please make sure [trusted access with AWS Organizations](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-activate-trusted-access.html) is activated.
-
-The Management Accounts Stack creates a read role in the Management Accounts and also a StackSet that will deploy another read role in each linked Account. Permissions depend on the set of modules you activate via parameters of the stack:
-
-   *  <kbd> <br> [Launch Stack >>](https://console.aws.amazon.com/cloudformation/home#/stacks/create/review?&templateURL=https://aws-managed-cost-intelligence-dashboards-us-east-1.s3.amazonaws.com/cfn/data-collection/deploy-data-read-permissions.yaml&stackName=CidDataCollectionDataReadPermissionsStack&param_DataCollectionAccountID=REPLACE%20WITH%20DATA%20COLLECTION%20ACCOUNT%20ID&param_AllowModuleReadInMgmt=yes&param_OrganizationalUnitID=REPLACE%20WITH%20ORGANIZATIONAL%20UNIT%20ID&param_IncludeBudgetsModule=no&param_IncludeComputeOptimizerModule=no&param_IncludeCostAnomalyModule=no&param_IncludeECSChargebackModule=no&param_IncludeInventoryCollectorModule=no&param_IncludeRDSUtilizationModule=no&param_IncludeRightsizingModule=no&param_IncludeTAModule=no&param_IncludeTransitGatewayModule=no) <br> </kbd>
+2. Deploy the Data Collection Stack to the Data Collection AWS Account
 
 
-#### 2. In Data Collection Account
+For deployment and further information please reference to this [documentation](https://catalog.workshops.aws/awscid/data-collection).
 
-Deploy Data Collection Stack.
+[![Documentation](/.images/documentation.svg)](https://catalog.workshops.aws/awscid/data-collection)
 
-   * <kbd> <br> [Launch Stack >>](https://console.aws.amazon.com/cloudformation/home#/stacks/create/review?&templateURL=https://aws-managed-cost-intelligence-dashboards-us-east-1.s3.amazonaws.com/cfn/data-collection/deploy-data-collection.yaml&stackName=CidDataCollectionStack&param_ManagementAccountID=REPLACE%20WITH%20MANAGEMENT%20ACCOUNT%20ID&param_IncludeTAModule=yes&param_IncludeRightsizingModule=no&param_IncludeCostAnomalyModule=yes&param_IncludeInventoryCollectorModule=yes&param_IncludeComputeOptimizerModule=yes&param_IncludeECSChargebackModule=no&param_IncludeRDSUtilizationModule=no&param_IncludeOrgDataModule=yes&param_IncludeBudgetsModule=yes&param_IncludeTransitGatewayModule=no)  <br> </kbd>
 
-#### Usage
-Check Athena tables.
-
-### FAQ
-#### Migration from previous Data Collection Lab
-
-### See also
-[CONTRIBUTING.md](CONTRIBUTING.md)
-
+### Contributing
+See [CONTRIBUTING.md](CONTRIBUTING.md)

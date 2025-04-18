@@ -1,5 +1,6 @@
+# https://github.com/awslabs/cid-data-collection-framework/blob/main/data-exports/deploy/cur-aggregation.yaml
 AWSTemplateFormatVersion: "2010-09-09"
-Description: AWS Legacy CUR Aggregation Stack v0.1.0
+Description: AWS Legacy CUR Aggregation Stack v0.2.0 - AWS Solution SO9011
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -128,7 +129,7 @@ Resources:
         Rules:
           - Id: Object&Version Expiration
             Status: Enabled
-            NoncurrentVersionExpirationInDays: 32 # 1 month
+            NoncurrentVersionExpirationInDays: 1
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -280,8 +281,8 @@ Resources:
         Rules:
           - Id: Object&Version Expiration
             Status: Enabled
-            NoncurrentVersionExpirationInDays: 32 # 1 month
-            ExpirationInDays: 64 # 2 months
+            NoncurrentVersionExpirationInDays: 1
+            ExpirationInDays: 7
     Metadata:
       cfn_nag:
         rules_to_suppress:
