@@ -1,6 +1,6 @@
----
+#https://github.com/awslabs/cid-data-collection-framework/blob/main/rls/deploy/deploy_cid_rls.yaml
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Lambda to collect AWS Organization and Amazon QuickSight data and store in S3 for RLS implementation v0.2.0
+Description: Lambda to collect AWS Organization and Amazon QuickSight data and store in S3 for RLS implementation v0.2.0 - AWS Solution SO9011
 Parameters:
   DestinationBucket:
     Type: String
