@@ -905,7 +905,7 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - cloudwatch:PutMetricData
-                Resource: '*'
+                Resource: '*' # Wildcard required as actions do not support resource-level permissions
                 Condition:
                   StringEquals:
                     cloudwatch:namespace: CID-DataCollection
