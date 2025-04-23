@@ -596,13 +596,16 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
-              - !If
-                - NeedDataBucketsKms
+        - !If
+          - NeedDataBucketsKms
+          - PolicyName: "KMS"
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
                 - Effect: "Allow"
                   Action:
                     - "kms:Decrypt"
                   Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
-                - !Ref AWS::NoValue
 
   KmsPolicyForCidResources:
     Type: AWS::IAM::Policy
@@ -617,7 +620,6 @@ Resources:
               - 'kms:Decrypt'
             Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
       Roles:
-        - !Ref LambdaInitRole
         - !Ref StepFunctionExecutionRole
         - !Ref LambdaManageGlueTableRole
         - !Ref GlueRole
