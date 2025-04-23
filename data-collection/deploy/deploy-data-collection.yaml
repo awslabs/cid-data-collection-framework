@@ -606,6 +606,7 @@ Resources:
                   Action:
                     - "kms:Decrypt"
                   Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+          - !Ref AWS::NoValue
 
   KmsPolicyForCidResources:
     Type: AWS::IAM::Policy
