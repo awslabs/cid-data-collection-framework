@@ -596,6 +596,13 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
+              - !If
+                - NeedDataBucketsKms
+                - Effect: "Allow"
+                  Action:
+                    - "kms:Decrypt"
+                  Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+                - !Ref AWS::NoValue
 
   KmsPolicyForCidResources:
     Type: AWS::IAM::Policy
