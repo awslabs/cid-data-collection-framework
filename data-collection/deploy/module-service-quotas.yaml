@@ -87,6 +87,17 @@ Resources:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
                 Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${MultiAccountRoleName}"
+        - PolicyName: "ServiceQuotas-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: 
+                   - "servicequotas:ListRequestedServiceQuotaChangeHistory"
+                   - "servicequotas:GetServiceQuota"
+                   - "servicequotas:ListServiceQuotas"
+                   - "servicequotas:GetAWSDefaultServiceQuota"
+                Resource: "*"    
         - PolicyName: "S3-Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -112,6 +123,14 @@ Resources:
                   - "events:PutEvents"
                 Resource:
                   - !Sub "arn:${AWS::Partition}:events:*:${AWS::AccountId}:event-bus/default"
+        - PolicyName: "Organizations-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "organizations:DescribeOrganization"
+                Resource: "*"
         - !If 
           - NeedDataBucketsKms
           - PolicyName: "KMS"
@@ -165,6 +184,7 @@ Resources:
 
               account = json.loads(event[key])
               try:
+                  logger.info(f"Processing regions: {REGIONS}")
                   main(account, ROLE_NAME, MODULE_NAME, BUCKET, REGIONS)
               except Exception as exc: #pylint: disable=broad-exception-caught
                   logger.error(f'Error in account {account}: {exc}')
@@ -193,51 +213,95 @@ Resources:
 
           def main(account, role_name, module_name, bucket, regions): # pylint: disable=too-many-locals
               s3_client = boto3.client("s3")
-              account_id = account["account_id"]
               payer_id = account["payer_id"]
-              session = get_session_with_role(role_name, account_id)
+              
+              # Get payer account ID
+              org_client = boto3.client('organizations')
+              try:
+                  payer_account_id = org_client.describe_organization()['Organization']['MasterAccountId']
+                  logger.info(f"Payer account ID: {payer_account_id}")
+              except Exception as e:
+                  logger.error(f"Error getting payer account ID: {e}")
+                  raise
+              
+              # Always collect from payer account first
+              logger.info(f"Collecting service quota history from payer account {payer_account_id}")
+              try:
+                  collect_quota_history(payer_account_id, None, s3_client, module_name, bucket, payer_id, regions)
+                  logger.info(f"Successfully collected data from payer account {payer_account_id}")
+              except Exception as e:
+                  logger.error(f"Error collecting from payer account {payer_account_id}: {e}")
+                  raise
+              
+              # Then collect from linked accounts if this is not the payer account
+              account_id = account["account_id"]
+              if account_id != payer_account_id:  # Skip if this is already the payer account
+                  logger.info(f"Collecting service quota history from linked account {account_id}")
+                  try:
+                      session = get_session_with_role(role_name, account_id)
+                      collect_quota_history(account_id, session, s3_client, module_name, bucket, payer_id, regions)
+                      logger.info(f"Successfully collected data from linked account {account_id}")
+                  except Exception as e:
+                      logger.error(f"Error collecting from linked account {account_id}: {e}")
+                      raise
 
+          def collect_quota_history(account_id, session, s3_client, module_name, bucket, payer_id, regions):
+              logger.info(f"Starting quota collection for account {account_id} in regions: {regions}")
               for region in regions:
-                  quotas_client = session.client("service-quotas", region_name=region)
-                  logger.debug(f"Start looping through services in {region}")
-                  quota_history = list(
-                      quotas_client
-                          .get_paginator('list_requested_service_quota_change_history')
-                          .paginate()
-                          .search("RequestedQuotas")
-                  )
-                  if not quota_history:
-                      logger.debug(f"No change history in {region}")
+                  logger.info(f"Processing region {region} for account {account_id}")
+                  try:
+                      quotas_client = session.client("service-quotas", region_name=region) if session else boto3.client("service-quotas", region_name=region)
+                      logger.debug(f"Start looping through services in {region}")
+                      quota_history = list(
+                          quotas_client
+                              .get_paginator('list_requested_service_quota_change_history')
+                              .paginate()
+                              .search("RequestedQuotas")
+                      )
+                      if not quota_history:
+                          logger.debug(f"No change history in {region}")
+                          continue
+                      
+                      # Store history
+                      history_key = f'{module_name}/{module_name}-history/payer_id={payer_id}/account_id={account_id}/region={region}/history.json'
+                      s3_client.put_object(
+                          Bucket=bucket,
+                          Key=history_key,
+                          Body="\n".join([to_json(item) for item in quota_history]),
+                          ContentType='application/json'
+                      )
+                      logger.info(f"Uploaded {len(quota_history)} history records for {region} to s3://{BUCKET}/{history_key}")
+
+                      # Store current quotas
+                      json_lines_quota = []
+                      for item in quota_history:
+                          try:
+                              quota_result = quotas_client.get_service_quota(
+                                  ServiceCode=item['ServiceCode'],
+                                  QuotaCode=item['QuotaCode']
+                              )['Quota']
+                              quota_result['DefaultValue'] = quotas_client.get_aws_default_service_quota(
+                                  ServiceCode=item['ServiceCode'],
+                                  QuotaCode=item['QuotaCode']
+                              )['Quota']['Value']
+                              json_lines_quota.append(to_json(quota_result))
+                          except Exception as e:
+                              logger.error(f"Error getting quota for {item['ServiceCode']}/{item['QuotaCode']}: {e}")
+                              continue
+
+                      if json_lines_quota:
+                          quota_key = f'{MODULE_NAME}/{MODULE_NAME}-data/payer_id={payer_id}/account_id={account_id}/region={region}/quotas.json'
+                          s3_client.put_object(
+                              Bucket=BUCKET,
+                              Key=quota_key,
+                              Body="\n".join(json_lines_quota),
+                              ContentType='application/json'
+                          )
+                          logger.info(f"Uploaded {len(json_lines_quota)} quota records for {region} to s3://{BUCKET}/{quota_key}")
+                  except Exception as e:
+                      logger.error(f"Error processing region {region} for account {account_id}: {e}")
                       continue
-                  key = f'{module_name}/{module_name}-history/payer_id={payer_id}/account_id={account_id}/region={region}/history.json'
-                  s3_client.put_object(
-                      Bucket=bucket,
-                      Key=key,
-                      Body="\n".join([to_json(item) for item in quota_history]),
-                      ContentType='application/json'
-                  )
-                  logger.info(f"Uploaded {len(quota_history)} records for {region} to s3://{BUCKET}/{key}")
 
-                  json_lines_quota = []
-                  for item in quota_history:
-                      quota_result = quotas_client.get_service_quota(
-                          ServiceCode=item['ServiceCode'],
-                          QuotaCode=item['QuotaCode']
-                      )['Quota']
-                      quota_result['DefaultValue'] = quotas_client.get_aws_default_service_quota(
-                          ServiceCode=item['ServiceCode'],
-                          QuotaCode=item['QuotaCode']
-                      )['Quota']['Value']
-                      json_lines_quota.append(to_json(quota_result))
-
-                  key = f'{MODULE_NAME}/{MODULE_NAME}-data/payer_id={payer_id}/account_id={account_id}/region={region}/quotas.json'
-                  s3_client.put_object(
-                      Bucket=BUCKET,
-                      Key=key,
-                      Body="\n".join(json_lines_quota),
-                      ContentType='application/json'
-                  )
-                  logger.info(f"Uploaded {len(json_lines_quota)} records for {region} to s3://{BUCKET}/{key}")
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
