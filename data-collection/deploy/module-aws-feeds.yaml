@@ -118,7 +118,8 @@ Resources:
               },
               "aws-cid": {
                   "path": "aws-feeds/aws-cid-feeds-whats-new",
-                  "feed_url": "https://cid.workshops.aws.dev/feed/cloud-intelligence-dashboards.rss"
+                  "feed_url": "https://cid.workshops.aws.dev/feed/cloud-intelligence-dashboards.rss",
+                  "default_services": ["aws-cid"],
               }
           }
 
@@ -147,11 +148,11 @@ Resources:
               return parser.text.strip() + '\n\n' + '\n'.join([f"[{index}]: {url}" for index, url in parser.ref.items()])
 
           def lambda_handler(event, context):
-              list = os.environ['FEEDS_LIST'].split(',')
+              feeds_list = os.environ['FEEDS_LIST'].split(',')
               bucket_name = os.environ['BUCKET_NAME']
 
               try:
-                  for entry in list:
+                  for entry in feeds_list:
                       feed_url = FEEDS_MAP[entry]['feed_url']
                       bucket_path = FEEDS_MAP[entry]['path']
                       with urllib.request.urlopen(feed_url, timeout=10) as response:  # nosec
@@ -186,10 +187,7 @@ Resources:
                               description_cleaned = clean_html(description)
 
                               categories = category.split(',')
-                              if 'awscid' in link:
-                                  services = ["aws-cid"]
-                              else:
-                                  services = []
+                              services = FEEDS_MAP[entry].get('default_services', [])
                               category_values = []
 
                               for cat in categories:
