@@ -113,6 +113,10 @@ def test_inventory_lambda_functions_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_lambda_functions_data" LIMIT 10;')
     assert len(data) > 0, 'inventory_lambda_functions_data is empty'
 
+def test_inventory_network_interfaces_functions_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_network_interfaces_data" LIMIT 10;')
+    assert len(data) > 0, 'inventory-network-interfaces-data'
+
 def test_rds_usage_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."rds_usage_data" LIMIT 10;')
     assert len(data) > 0, 'rds_usage_data is empty'
