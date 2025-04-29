@@ -87,17 +87,6 @@ Resources:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
                 Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${MultiAccountRoleName}"
-        - PolicyName: "ServiceQuotas-Access"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action: 
-                   - "servicequotas:ListRequestedServiceQuotaChangeHistory"
-                   - "servicequotas:GetServiceQuota"
-                   - "servicequotas:ListServiceQuotas"
-                   - "servicequotas:GetAWSDefaultServiceQuota"
-                Resource: "*"    
         - PolicyName: "S3-Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -122,15 +111,7 @@ Resources:
                 Action:
                   - "events:PutEvents"
                 Resource:
-                  - !Sub "arn:${AWS::Partition}:events:*:${AWS::AccountId}:event-bus/default"
-        - PolicyName: "Organizations-Access"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "organizations:DescribeOrganization"
-                Resource: "*"
+                  - !Sub "arn:${AWS::Partition}:events:*:${AWS::AccountId}:event-bus/default"        
         - !If 
           - NeedDataBucketsKms
           - PolicyName: "KMS"
@@ -184,7 +165,6 @@ Resources:
 
               account = json.loads(event[key])
               try:
-                  logger.info(f"Processing regions: {REGIONS}")
                   main(account, ROLE_NAME, MODULE_NAME, BUCKET, REGIONS)
               except Exception as exc: #pylint: disable=broad-exception-caught
                   logger.error(f'Error in account {account}: {exc}')
@@ -213,44 +193,14 @@ Resources:
 
           def main(account, role_name, module_name, bucket, regions): # pylint: disable=too-many-locals
               s3_client = boto3.client("s3")
-              payer_id = account["payer_id"]
-              
-              # Get payer account ID
-              org_client = boto3.client('organizations')
-              try:
-                  payer_account_id = org_client.describe_organization()['Organization']['MasterAccountId']
-                  logger.info(f"Payer account ID: {payer_account_id}")
-              except Exception as e:
-                  logger.error(f"Error getting payer account ID: {e}")
-                  raise
-              
-              # Always collect from payer account first
-              logger.info(f"Collecting service quota history from payer account {payer_account_id}")
-              try:
-                  collect_quota_history(payer_account_id, None, s3_client, module_name, bucket, payer_id, regions)
-                  logger.info(f"Successfully collected data from payer account {payer_account_id}")
-              except Exception as e:
-                  logger.error(f"Error collecting from payer account {payer_account_id}: {e}")
-                  raise
-              
-              # Then collect from linked accounts if this is not the payer account
               account_id = account["account_id"]
-              if account_id != payer_account_id:  # Skip if this is already the payer account
-                  logger.info(f"Collecting service quota history from linked account {account_id}")
-                  try:
-                      session = get_session_with_role(role_name, account_id)
-                      collect_quota_history(account_id, session, s3_client, module_name, bucket, payer_id, regions)
-                      logger.info(f"Successfully collected data from linked account {account_id}")
-                  except Exception as e:
-                      logger.error(f"Error collecting from linked account {account_id}: {e}")
-                      raise
+              payer_id = account["payer_id"]
+              session = get_session_with_role(role_name, account_id)
 
-          def collect_quota_history(account_id, session, s3_client, module_name, bucket, payer_id, regions):
-              logger.info(f"Starting quota collection for account {account_id} in regions: {regions}")
               for region in regions:
                   logger.info(f"Processing region {region} for account {account_id}")
                   try:
-                      quotas_client = session.client("service-quotas", region_name=region) if session else boto3.client("service-quotas", region_name=region)
+                      quotas_client = session.client("service-quotas", region_name=region) 
                       logger.debug(f"Start looping through services in {region}")
                       quota_history = list(
                           quotas_client
@@ -260,8 +210,7 @@ Resources:
                       )
                       if not quota_history:
                           logger.debug(f"No change history in {region}")
-                          continue
-                      
+                          continue 
                       # Store history
                       history_key = f'{module_name}/{module_name}-history/payer_id={payer_id}/account_id={account_id}/region={region}/history.json'
                       s3_client.put_object(
