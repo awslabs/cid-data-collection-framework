@@ -111,7 +111,7 @@ Resources:
                 Action:
                   - "events:PutEvents"
                 Resource:
-                  - !Sub "arn:${AWS::Partition}:events:*:${AWS::AccountId}:event-bus/default"        
+                  - !Sub "arn:${AWS::Partition}:events:*:${AWS::AccountId}:event-bus/default"
         - !If 
           - NeedDataBucketsKms
           - PolicyName: "KMS"
