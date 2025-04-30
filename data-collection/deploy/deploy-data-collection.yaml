@@ -1,6 +1,6 @@
 # https://github.com/awslabs/cid-data-collection-framework/blob/main/data-collection/deploy/deploy-data-collection.yaml
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection Stack v3.9.0 - AWS Solution SO9011
+Description: CID Data Collection Stack v3.9.1 - AWS Solution SO9011
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -597,6 +597,17 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
+        - !If
+          - NeedDataBucketsKms
+          - PolicyName: "KMS"
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "kms:Decrypt"
+                  Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+          - !Ref AWS::NoValue
 
   KmsPolicyForCidResources:
     Type: AWS::IAM::Policy
@@ -611,7 +622,6 @@ Resources:
               - 'kms:Decrypt'
             Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
       Roles:
-        - !Ref LambdaInitRole
         - !Ref StepFunctionExecutionRole
         - !Ref LambdaManageGlueTableRole
         - !Ref GlueRole

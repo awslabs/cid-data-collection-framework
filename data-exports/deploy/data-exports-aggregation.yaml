@@ -1,6 +1,6 @@
 # https://github.com/awslabs/cid-data-collection-framework/blob/main/data-exports/deploy/data-exports-aggregation.yaml
 AWSTemplateFormatVersion: "2010-09-09"
-Description: AWS Billing Data Export Aggregation v0.4.0 - AWS Solution SO9011
+Description: AWS Billing Data Export Aggregation v0.5.0 - AWS Solution SO9011
 Metadata:
 
   AWS::CloudFormation::Interface:
@@ -14,6 +14,7 @@ Metadata:
           - ManageCUR2
           - ManageFOCUS
           - ManageCOH
+          - ManageCarbon
       -
         Label:
           default: "Parameters needed in Destination (Data Collection) Account only"
@@ -35,6 +36,8 @@ Metadata:
         default: "CUR 2.0"
       ManageFOCUS:
         default: "FOCUS"
+      ManageCarbon:
+        default: "Carbon Emissions"
       DestinationAccountId:
         default: "Destination (Data Collection) Account Id"
       ResourcePrefix:
@@ -80,6 +83,11 @@ Parameters:
     Type: String
     Description:  "NOTE: you must have Cost Optimization Hub Enabled"
     AllowedValues: ['yes', 'no']
+    Default: "no"
+  ManageCarbon:
+    Type: String
+    Description: ""
+    AllowedValues: ["yes", "no"]
     Default: "no"
 
   ##
@@ -152,12 +160,14 @@ Conditions:
   ManageCUR2: !Equals [!Ref ManageCUR2, 'yes']
   ManageFOCUS: !Equals [!Ref ManageFOCUS, 'yes']
   ManageCOH: !Equals [!Ref ManageCOH, 'yes']
+  ManageCarbon: !Equals [!Ref ManageCarbon, "yes"]
   EnableSCAD: !Equals [!Ref EnableSCAD, 'yes']
   DeployDataExport:
     Fn::Or:
       - !Condition ManageCUR2
       - !Condition ManageFOCUS
       - !Condition ManageCOH
+      - !Condition ManageCarbon
   DeploySourceS3:
     Fn::And:
       - !Condition IsSourceAccount
@@ -166,19 +176,23 @@ Conditions:
   DeployCUR2ViaCFN:      !And [!Condition IsSourceAccount, !Condition ManageCUR2,        !Condition RegionSupportsDataExportsViaCFN]
   DeployFOCUSViaCFN:     !And [!Condition IsSourceAccount, !Condition ManageFOCUS,       !Condition RegionSupportsDataExportsViaCFN]
   DeployCOHViaCFN:       !And [!Condition IsSourceAccount, !Condition ManageCOH,         !Condition RegionSupportsDataExportsViaCFN]
-  DeployCUR2ViaLambda:   !And [!Condition IsSourceAccount, !Condition ManageCUR2,  !Not [!Condition RegionSupportsDataExportsViaCFN]]
-  DeployFOCUSViaLambda:  !And [!Condition IsSourceAccount, !Condition ManageFOCUS, !Not [!Condition RegionSupportsDataExportsViaCFN]]
-  DeployCOHViaLambda:   !And [!Condition IsSourceAccount, !Condition ManageCOH,    !Not [!Condition RegionSupportsDataExportsViaCFN]]
+  DeployCarbonViaCFN:    !And [!Condition IsSourceAccount, !Condition ManageCarbon,      !Condition RegionSupportsDataExportsViaCFN]
+  DeployCUR2ViaLambda:   !And [!Condition IsSourceAccount, !Condition ManageCUR2,   !Not [!Condition RegionSupportsDataExportsViaCFN]]
+  DeployFOCUSViaLambda:  !And [!Condition IsSourceAccount, !Condition ManageFOCUS,  !Not [!Condition RegionSupportsDataExportsViaCFN]]
+  DeployCOHViaLambda:    !And [!Condition IsSourceAccount, !Condition ManageCOH,    !Not [!Condition RegionSupportsDataExportsViaCFN]]
+  DeployCarbonViaLambda: !And [!Condition IsSourceAccount, !Condition ManageCarbon, !Not [!Condition RegionSupportsDataExportsViaCFN]]
   DeployCUR2Table:       !And [!Condition IsDestinationAccount, !Condition ManageCUR2]
   DeployFOCUSTable:      !And [!Condition IsDestinationAccount, !Condition ManageFOCUS]
   DeployCOHTable:        !And [!Condition IsDestinationAccount, !Condition ManageCOH]
-  DeployAnyExportViaLambda: !Or [!Condition DeployCUR2ViaLambda, !Condition DeployFOCUSViaLambda, !Condition DeployCOHViaLambda]
-  DeployAnyTable: !Or [!Condition DeployFOCUSTable, !Condition DeployCUR2Table, !Condition DeployCOHTable]
+  DeployCarbonTable:     !And [!Condition IsDestinationAccount, !Condition ManageCarbon]
+  DeployAnyExportViaLambda: !Or [!Condition DeployCUR2ViaLambda, !Condition DeployFOCUSViaLambda, !Condition DeployCOHViaLambda, !Condition DeployCarbonViaLambda]
+  DeployAnyTable: !Or [!Condition DeployFOCUSTable, !Condition DeployCUR2Table, !Condition DeployCOHTable, !Condition DeployCarbonTable]
 
   NeedLakeFormationEnabledDB: !And [ !Equals [ !Ref LakeFormationEnabled, "yes"], !Condition DeployAnyTable]
   NeedLakeFormationEnabledCOH:    !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageCOH]
   NeedLakeFormationEnabledCUR2:   !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageCUR2]
   NeedLakeFormationEnabledFOCUS:  !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageFOCUS]
+  NeedLakeFormationEnabledCarbon: !And [!Condition NeedLakeFormationEnabledDB, !Condition ManageCarbon]
   DeployWriteBlocker:
     Fn::And:
       - !Condition IsDestinationAccount
@@ -202,6 +216,10 @@ Mappings:
       DefaultQuery: >-
         SELECT account_id, action_type, currency_code, current_resource_details, current_resource_summary, current_resource_type, estimated_monthly_cost_after_discount, estimated_monthly_cost_before_discount, estimated_monthly_savings_after_discount, estimated_monthly_savings_before_discount, estimated_savings_percentage_after_discount, estimated_savings_percentage_before_discount, implementation_effort, last_refresh_timestamp, recommendation_id, recommendation_lookback_period_in_days, recommendation_source, recommended_resource_details, recommended_resource_summary, recommended_resource_type, region, resource_arn, restart_needed, rollback_possible, tags
         FROM COST_OPTIMIZATION_RECOMMENDATIONS
+    Carbon:
+      DefaultQuery: >-
+        SELECT last_refresh_timestamp, location, model_version, payer_account_id, product_code, region_code, total_mbm_emissions_unit, total_mbm_emissions_value, usage_account_id, usage_period_end, usage_period_start
+        FROM CARBON_EMISSIONS
 
 Resources:
 
@@ -379,6 +397,16 @@ Resources:
             Priority: 3
             DeleteMarkerReplication:
               Status: Enabled
+          - Destination:
+              Bucket: !Sub "arn:${AWS::Partition}:s3:::${ResourcePrefix}-${DestinationAccountId}-data-exports"
+              StorageClass: STANDARD
+            Id: ReplicateCarbonData
+            Filter:
+              Prefix: !Sub "carbon/${AWS::AccountId}/${ResourcePrefix}-carbon/data/" # Hardcoded export name
+            Status: Enabled
+            Priority: 4
+            DeleteMarkerReplication:
+              Status: Enabled
           - Fn::If:
             - NonEmptySecondaryDestinationBucket
             - Destination:
@@ -418,6 +446,19 @@ Resources:
               DeleteMarkerReplication:
                 Status: Enabled
             - !Ref 'AWS::NoValue'
+          - Fn::If:
+            - NonEmptySecondaryDestinationBucket
+            - Destination:
+                Bucket: !Sub "arn:${AWS::Partition}:s3:::${SecondaryDestinationBucket}"
+                StorageClass: STANDARD
+              Id: ReplicateCarbonDataToSecondaryBucket
+              Filter:
+                Prefix: !Sub "carbon/${AWS::AccountId}/${ResourcePrefix}-carbon/data/" # Hardcoded export name
+              Status: Enabled
+              Priority: 104
+              DeleteMarkerReplication:
+                Status: Enabled
+            - !Ref "AWS::NoValue"
       LifecycleConfiguration:
         Rules:
           - Id: Object&Version Expiration
@@ -978,6 +1019,58 @@ Resources:
       ServiceToken: !GetAtt CreateServiceLinkedRoleFunction.Arn
       ServiceTimeout: "90"
 
+  # Carbon Emissions
+
+  ## Deploy Data Export natively via CFN resource in regions that support native CFN
+  LocalCarbonViaCFN:
+    Type: AWS::BCMDataExports::Export
+    Condition: DeployCarbonViaCFN
+    DependsOn:
+      - SourceS3BucketPolicy
+    Properties:
+      Export:
+        DataQuery:
+          QueryStatement: !FindInMap [DataExports, Carbon, DefaultQuery]
+        Description: "Carbon emissions export for aggregation in CID"
+        DestinationConfigurations:
+          S3Destination:
+            S3Bucket: !Ref SourceS3
+            S3Prefix: !Sub "carbon/${AWS::AccountId}" # Explicitly hardcode name of folder (it will be the same as table name)
+            S3Region: !Ref AWS::Region
+            S3OutputConfigurations:
+              Overwrite: "OVERWRITE_REPORT"
+              Format: "PARQUET"
+              Compression: "PARQUET"
+              OutputType: "CUSTOM"
+        Name: !Sub '${ResourcePrefix}-carbon'
+        RefreshCadence:
+          Frequency: "SYNCHRONOUS"
+
+  # Deploy Data Export via Lambda due to missing CFN resource definition AWS::BCMDataExports::Export outside us-east-1 or cn-northwest-1
+  LocalCarbonViaCustomResource:
+    Type: Custom::CUR2Creator
+    Condition: DeployCarbonViaLambda
+    Properties:
+      ServiceToken: !GetAtt CidDataExportCreatorLambda.Arn
+      BucketPolicyWait: !Ref SourceS3BucketPolicy
+      Export:
+        DataQuery:
+          QueryStatement: !FindInMap [DataExports, Carbon, DefaultQuery]
+        Description: "Carbon emissions export for aggregation in CID"
+        DestinationConfigurations:
+          S3Destination:
+            S3Bucket: !Ref SourceS3
+            S3Prefix: !Sub "carbon/${AWS::AccountId}" # Explicitly hardcode name of folder (it will be the same as table name)
+            S3Region: !Ref AWS::Region
+            S3OutputConfigurations:
+              Overwrite: "OVERWRITE_REPORT"
+              Format: "PARQUET"
+              Compression: "PARQUET"
+              OutputType: "CUSTOM"
+        Name: !Sub '${ResourcePrefix}-carbon'
+        RefreshCadence:
+          Frequency: "SYNCHRONOUS"
+
 ###########################################################################
 # Lambda DataExport Creator: used to create DataExport from outside us-east-1 or cn-northwest-1
 ###########################################################################
@@ -1033,6 +1126,9 @@ Resources:
               - cost-optimization-hub:GetRecommendation  #need this permission for bcm-data-exports to work
               - cost-optimization-hub:ListRecommendations
               Resource: "arn:aws:cost-optimization-hub:*"
+            - Effect: Allow
+              Action: sustainability:GetCarbonFootprintSummary # needed ad carbon emissions data export creation time
+              Resource: "*"
 
   CidDataExportCreatorLambda:
     Type: AWS::Lambda::Function
@@ -1500,6 +1596,95 @@ Resources:
           }
         }
 
+###########################################################################
+# Carbon emissions
+###########################################################################
+
+  CarbonTable:  # Initial creation of table. it will be updated by crawler later
+    Type: AWS::Glue::Table
+    Condition: DeployCarbonTable
+    Properties:
+      CatalogId: !Sub "${AWS::AccountId}"
+      DatabaseName: !Ref CIDDatabase
+      TableInput:
+        Name: carbon
+        Owner: owner
+        Retention: 0
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          compressionType: none
+          classification: parquet
+          UPDATED_BY_CRAWLER: !Ref CarbonCrawler
+        StorageDescriptor:
+          BucketColumns: []
+          Compressed: false
+          Location: !Sub "s3://${DestinationS3}/carbon/"
+          NumberOfBuckets: -1
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo:
+            Parameters:
+              serialization.format: '1'
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+          StoredAsSubDirectories: false
+          Columns: # All fields required for CID
+            - {"Name": "payer_account_id", "Type": "string"}
+            - {"Name": "usage_account_id", "Type": "string"}
+            - {"Name": "total_mbm_emissions_value", "Type": "double"}
+            - {"Name": "total_mbm_emissions_unit", "Type": "string"}
+            - {"Name": "model_version", "Type": "string"}
+            - {"Name": "product_code", "Type": "string"}
+            - {"Name": "usage_period_start", "Type": "timestamp"}
+            - {"Name": "usage_period_end", "Type": "timestamp"}
+            - {"Name": "last_refresh_timestamp", "Type": "timestamp"}
+            - {"Name": "region_code", "Type": "string"}
+            - {"Name": "location", "Type": "string"}
+        PartitionKeys:
+          - {"Name": "source_account_id", "Type": "string" }
+          - {"Name": "report_name", "Type": "string" }
+          - {"Name": "data", "Type": "string" }
+          - {"Name": "carbon_model_version", "Type": "string" }
+          - {"Name": "usage_period", "Type": "string" }
+
+  CarbonCrawler:
+    Type: AWS::Glue::Crawler
+    Condition: DeployCarbonTable
+    Properties:
+      Name:  !Sub "${ResourcePrefix}-DataExportCarbonCrawler"
+      Description: A recurring crawler that keeps your Carbon emissions table in Athena up-to-date.
+      Role: !GetAtt CidDataExportCrawlerRole.Arn
+      DatabaseName: !Ref CIDDatabase
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationS3}/carbon/"
+            Exclusions:
+              - '**.json'
+              - '**.yml'
+              - '**.sql'
+              - '**.csv'
+              - '**.csv.metadata'
+              - '**.gz'
+              - '**.zip'
+              - '**/cost_and_usage_data_status/*'
+              - 'aws-programmatic-access-test-object'
+      SchemaChangePolicy:
+        DeleteBehavior: LOG
+      RecrawlPolicy:
+        RecrawlBehavior: CRAWL_EVERYTHING
+      Schedule:
+        ScheduleExpression: cron(0 2 * * ? *)
+      Configuration: |
+        {
+          "Version":1.0,
+          "Grouping": {
+            "TableGroupingPolicy": "CombineCompatibleSchemas"
+          },
+          "CrawlerOutput":{
+            "Tables":{
+              "AddOrUpdateBehavior":"MergeNewColumns"
+            }
+          }
+        }
 
   LakeFormationTagsForDatabase:
     Type: AWS::LakeFormation::TagAssociation
@@ -1560,6 +1745,20 @@ Resources:
             - !ImportValue cid-LakeFormation-TagValue
           CatalogId: !Ref "AWS::AccountId"
 
+  LakeFormationTagsForCarbon:
+    Type: AWS::LakeFormation::TagAssociation
+    Condition: NeedLakeFormationEnabledCarbon
+    Properties:
+      Resource:
+        Table:
+          CatalogId: !Ref "AWS::AccountId"
+          DatabaseName: !Ref CIDDatabase
+          Name: !Ref CarbonTable
+      LFTags:
+        - TagKey: !ImportValue cid-LakeFormation-TagKey  # you need to install cid-lakeformation-prerequisite.yaml
+          TagValues:
+            - !ImportValue cid-LakeFormation-TagValue
+          CatalogId: !Ref "AWS::AccountId"
 
 ###########################################################################
 # Generic Resources
