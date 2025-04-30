@@ -116,7 +116,7 @@
             "States.ALL"
           ],
           "Output": {
-            "description": "{% $states.errorOutput %}"
+            "description": "{% 'Account Collector error with '& $states.errorOutput %}"
           },
           "Assign": {
             "ExecutionStatus": 520
@@ -365,7 +365,7 @@
         ]
       },
       "Output": {
-        "description": "Step Function DataCollectionMap failed most or all executions (States.ExceedToleratedFailureThreshold)"
+        "description": "{% $states.input.description %}"
       },
       "Next": "ExitLog",
       "Catch": [
@@ -437,7 +437,7 @@
           "StatusCode": "{% $ExecutionStatus %}",
           "SubCode": "",
           "RecordCount": 0,
-          "description": "{% $states.input.description %}",
+          "Description": "{% 'Step Function exit: '& $states.input.description %}",
           "DataLocation": "",
           "MainExeUuid": "{% $EXE_UUID %}",
           "SubUuid": {
