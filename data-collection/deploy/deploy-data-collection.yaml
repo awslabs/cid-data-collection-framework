@@ -35,6 +35,7 @@ Metadata:
           - IncludeTAModule
           - IncludeTransitGatewayModule
           - IncludeAWSFeedsModule
+          - IncludeISVFeedsModule
           - IncludeLicenseManagerModule
           - IncludeQuickSightModule
           - IncludeServiceQuotasModule
@@ -96,6 +97,8 @@ Metadata:
         default: 'Include AWS Backup Collection Module'
       IncludeAWSFeedsModule:
         default: 'Include AWS Feeds Module'
+      IncludeISVFeedsModule:
+        default: 'Include ISV Feeds Module'
       IncludeHealthEventsModule:
         default: 'Include AWS Health Events Module'
       IncludeLicenseManagerModule:
@@ -251,6 +254,11 @@ Parameters:
     Description: Collects AWS Feeds data
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeISVFeedsModule:
+    Type: String
+    Description: Collects ISV Feeds data
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeHealthEventsModule:
     Type: String
     Description: Collects AWS Health Events data
@@ -287,6 +295,7 @@ Conditions:
   DeployTransitGatewayModule: !Equals [ !Ref IncludeTransitGatewayModule, "yes"]
   DeployBackupModule: !Equals [ !Ref IncludeBackupModule, "yes"]
   DeployAWSFeedsModule: !Equals [ !Ref IncludeAWSFeedsModule, "yes"]
+  DeployISVFeedsModule: !Equals [ !Ref IncludeISVFeedsModule, "yes"]
   DeployHealthEventsModule: !Equals [ !Ref IncludeHealthEventsModule, "yes"]
   DeployLicenseManagerModule: !Equals [ !Ref IncludeLicenseManagerModule, "yes"]
   DeployQuickSightModule: !Equals [ !Ref IncludeQuickSightModule, "yes"]
@@ -1294,6 +1303,24 @@ Resources:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
+        Schedule: !Ref ScheduleFrequent
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, standalone-v1, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
+  ISVFeedsModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployISVFeedsModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-isv-feeds.yaml"
+      Parameters:
+        DatabaseName: !Ref DatabaseName
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
         Schedule: !Ref ScheduleFrequent
         GlueRoleARN: !GetAtt GlueRole.Arn
         ResourcePrefix: !Ref ResourcePrefix
