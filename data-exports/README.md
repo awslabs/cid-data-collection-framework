@@ -31,7 +31,7 @@ For customers with additional requirements, an enhanced architecture is availabl
 
 ![Advanced Architecture of Data Exports](/.images/architecture-data-exports-advanced.png  "Advanced Architecture of Data Exports")
 
-1. [AWS Data Exports](https://aws.amazon.com/aws-cost-management/aws-data-exports/) service delivers [Cost & Usage Report (CUR2)](https://docs.aws.amazon.com/cur/latest/userguide/what-is-cur.html) daily to an [Amazon S3](https://aws.amazon.com/s3/) Bucket in your AWS Account (either in Management/Payer Account or a regular Linked Account). In us-east-1 region, the CloudFormation creates native resources; in other regions, CloudFormation uses AWS Lambda and Custom Resource to provision Data Exports in us-east-1.
+1. [AWS Data Exports](https://aws.amazon.com/aws-cost-management/aws-data-exports/) service delivers updated monthly [Cost & Usage Report (CUR2)](https://docs.aws.amazon.com/cur/latest/userguide/what-is-cur.html) three times per day to an [Amazon S3](https://aws.amazon.com/s3/) Bucket in your AWS Account (either in Management/Payer Account or a regular Linked Account). In us-east-1 region, the CloudFormation creates native resources; in other regions, CloudFormation uses AWS Lambda and Custom Resource to provision Data Exports in us-east-1.
 
 2. [Amazon S3 replication](https://docs.aws.amazon.com/AmazonS3/latest/userguide/replication.html) rules copy Export data to a dedicated Data Collection Account automatically. This replication filters out all metadata and makes the file structure on the S3 bucket compatible with [Amazon Athena](https://aws.amazon.com/athena/) and [AWS Glue](https://aws.amazon.com/glue/) requirements.
 
@@ -43,7 +43,7 @@ For customers with additional requirements, an enhanced architecture is availabl
 
 6. When collecting data exports for Linked accounts (not for Management Accounts), you may also want to collect data exports for the Data Collection account itself. In this case, specify the Data Collection account as the first in the list of Source Accounts. Replication is still required to remove metadata.
 
-7. Athena's reading process can be affected by writing operations. When replication arrives, it might fail to update datasets, especially with high volumes of data. In such cases, consider scheduling temporary disabling and re-enabling of the Amazon S3 bucket policy that allows replication. Since exports typically arrive three times daily, this temporary deactivation has minimal side effects.
+7. Athena's reading process can be affected by writing operations. When replication arrives, it might fail to update datasets, especially with high volumes of data. In such cases, consider scheduling temporary disabling and re-enabling of the Amazon S3 bucket policy that allows replication. Since exports typically arrive three times daily, this temporary deactivation has minimal side effects and the updated data will be available with the next data delivery.  
 
 8. Some customers might need to store data exports to secondary destinations for archiving or reporting at a higher organizational level or to staging environment. You can specify a secondary bucket to receive the data in these cases.
 
