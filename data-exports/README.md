@@ -73,3 +73,15 @@ Cross-account access is possible but can be difficult to maintain, considering t
 
 ### We only have one AWS Organization. Do we still need this?
 Yes. Throughout an organization's lifecycle, mergers and acquisitions may occur, so this approach prepares you for potential future scenarios.
+
+### Can I use S3 Intelligent Tiering or S3 Infrequent Access (IA) for my CUR data connected to Athena?
+We strongly recommend **against** using S3 IA for CUR data that is connected to Athena, especially if you have active FinOps users querying this data. Here's why:
+- CUDOS typically only retrieves data for the last 7 months, so theoretically older data could be moved to S3 IA or managed with Intelligent Tiering.
+- Moving older CUR parquet files to IA could potentially reduce storage costs by up to 45%.
+- **However**, this only saves money if the data isn't frequently accessed. With S3 IA, you're charged $0.01 per GB retrieved.
+- Athena uses multiple computational nodes in parallel, and complex queries can multiply data reads dramatically. For every 1GB of data you want to scan, Athena might perform up to 75GB of S3 reads.
+- If someone runs a query without properly limiting it to specific billing periods, the retrieval costs can be astronomical. For example:
+  * Scanning a full CUR of 600GB: `600GB × 75 × $0.01/GB` = `$450.00` for just one query!
+- Due to this risk of human error, we do not use storage tiering as a default and strongly advise against it for CUR data connected to Athena.
+We also advise agains Intelligent Tiering by default.
+- KPI Dashboard - one of our foundational dashboards - scans the entire CUR (Cost and Usage Report) data to detect the first snapshot and determine its age. This prevents AWS Intelligent Tiering from functioning effectively, as it forces all data to remain in frequent access tiers and result is unnecessary additional monitoring costs with no cost-saving benefits.
