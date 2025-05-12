@@ -354,10 +354,11 @@ Resources:
               NoncurrentDays: 7
               NewerNoncurrentVersions: 1
             # ExpirationInDays: 365 # Set Expiration of all objects here (not recommended but can be useful in case of big workloads) 
-          - Id: DeleteIncompleteMultipartUploads
+          - Id: DeleteIncompleteMultipartUploadsAndExpiredDeleteMarkers
             Status: Enabled
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 7
+            ExpiredObjectDeleteMarker: true
           - Id: CleanupOldPricingFiles
             Status: Enabled
             Prefix: pricing/pricing-
