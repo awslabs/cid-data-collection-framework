@@ -223,7 +223,7 @@ Resources:
                       'statusCode': 200,
                       'body': f'Feed downloaded and grouped by date then uploaded to S3 bucket {bucket_name}'
                   }
-
+                      
               except urllib.error.URLError as e:
                   return {
                       'statusCode': 500,

@@ -132,51 +132,6 @@ Mappings:
     crawler-state-machine:        {TemplatePath: cfn/data-collection/v3.9.1/source/step-functions/crawler-state-machine.json}
     standalone-state-machine:     {TemplatePath: cfn/data-collection/v3.9.1/source/step-functions/standalone-state-machine.json}
     health-detail-state-machine:  {TemplatePath: cfn/data-collection/v3.9.1/source/step-functions/health-detail-state-machine.json}
-  ManagedTables:
-    LogTable:
-      table:
-        - Name: dc_execution_log
-          TableType: EXTERNAL_TABLE
-          PartitionKeys:
-          - { Name: logdate,    Type: string }
-          StorageDescriptor:
-            Columns:
-            - { Name: timestamp,                   Type: timestamp }
-            - { Name: datacollectionregion,        Type: string }
-            - { Name: datacollectionaccountid,     Type: string }
-            - { Name: module,                      Type: string }
-            - { Name: modulefunction,              Type: string }
-            - { Name: params,                      Type: string }
-            - { Name: payerid,                     Type: string }
-            - { Name: accountid,                   Type: string }
-            - { Name: region,                      Type: string }
-            - { Name: statuscode,                  Type: int }
-            - { Name: subcode,                     Type: string }
-            - { Name: recordcount,                 Type: int }
-            - { Name: description,                 Type: string }
-            - { Name: datalocation,                Type: string }
-            - { Name: mainexeuuid,                 Type: string }
-            - { Name: subuuid,                     Type: string }
-            - { Name: service,                     Type: string }
-            - { Name: stackversion,                Type: string }
-            - { Name: subversion,                  Type: string }
-            InputFormat: org.apache.hadoop.mapred.TextInputFormat
-            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
-            Location: !Sub "s3://${DestinationBucket}${AWS::AccountId}/logs/modules/"
-            Parameters: {}
-            SerdeInfo:
-              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
-              Parameters:
-                serialization.format: '1'
-          Parameters:
-            EXTERNAL: 'TRUE'
-            projection.logdate.format: yyyy/MM/dd
-            projection.logdate.interval: '1'
-            projection.logdate.interval.unit: DAYS
-            projection.logdate.range: 2025/01/01,NOW
-            projection.logdate.type: date
-            projection.enabled: 'true'
-            storage.location.template: !Sub "s3://${DestinationBucket}${AWS::AccountId}/logs/modules/${!logdate}"
 
 Parameters:
   DestinationBucket:
@@ -765,8 +720,8 @@ Resources:
                   for table in glue_client.get_paginator('get_tables').paginate(DatabaseName=database_name).search('TableList'):
                       table_name = table.get('Name')
                       updated_by = table.get('Parameters', {}).get('UPDATED_BY_CRAWLER', '')
-                      is_projection = table.get('Parameters', {}).get('projection.enabled', 'false').lower()
-                      if (not updated_by.startswith(resource_prefix)) and is_projection == 'false':
+                      is_projection = table.get('Parameters', {}).get('projection.enabled', '').lower()
+                      if (not updated_by.startswith(resource_prefix)) and (is_projection != 'true'):
                           glue_client.delete_table(DatabaseName=database_name, Name=table_name)
                           print(f'table {table_name} was deleted to avoid crawler confusion')
               return 'SUCCESS', 'success'
@@ -956,23 +911,26 @@ Resources:
                 Resource:
                   - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:*:*'
                   - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:express:*:*:*'
-        - PolicyName: "S3-AccountProcessingAndLogging" #Used for getting summary record list for map iterations and logging
+        - PolicyName: "S3-ReadOnlyAccess" #Used for getting summary record list for map iterations to retrieve detail API calls
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action:
-                  - s3:GetObject
-                  - s3:PutObject
+                  - "s3:GetObject"
                 Resource: !Sub '${S3Bucket.Arn}/*'
-        - PolicyName: "CloudWatchErrorLogging" #Used for logging processing errors to CloudWatch
+        - PolicyName: "LoggingToS3andCloudWatch" #Used for logging/instrumentation
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
+              - Effect: "Allow"
+                Action:
+                  - s3:PutObject
+                Resource: !Sub '${S3Bucket.Arn}/*'
               - Effect: "Allow"
                 Action:
                   - cloudwatch:PutMetricData
-                Resource: '*' # Wildcard required as actions do not support resource-level permissions
+                Resource: '*' # Wildcard required because actions do not support resource-level permissions
                 Condition:
                   StringEquals:
                     cloudwatch:namespace: CID-DataCollection

@@ -314,7 +314,8 @@ Resources:
                     guardrail_version=guardrail_version,
                     trace=trace
                 )
-                return LLMTextCompletionProgram.from_defaults(
+              
+              return LLMTextCompletionProgram.from_defaults(
                   llm=llm,
                   output_cls=Summary,
                   prompt_template_str=PROMPT_TEMPLATE.format(conversation=conversation),
