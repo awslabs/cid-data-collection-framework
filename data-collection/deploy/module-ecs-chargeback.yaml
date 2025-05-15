@@ -1,9 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Collects ECS Cluster and service data and places into a bucket in the management account
 Parameters:
-  StackID:
-    Type: String
-    Description: Arn of the main stack
   DatabaseName:
     Type: String
     Description: Name of the Athena database to be created to hold lambda information
@@ -130,13 +127,8 @@ Resources:
       Architectures: [x86_64]
       Code:
         ZipFile: |
-          #Module detail:
-          # Name: ECS Chargeback
-          # Account scope: Linked
-          # Region(s): user-specified
           import os
           import json
-          import uuid
           import logging
           from datetime import date, datetime
 
@@ -144,39 +136,30 @@ Resources:
           from botocore.exceptions import ClientError
           from boto3.session import Session
 
-          BUCKET = os.environ.get("BUCKET_NAME")
-          MODULE = os.environ.get("MODULE")
-          ROLE_NAME = os.environ.get('ROLE_NAME')
-          TMP_FILE = "/tmp/data.json"
-          START_TIME = str(datetime.now().isoformat())
-          REGIONS = [r.strip() for r in os.environ.get("REGIONS", "").split(',') if r]
-          DC_REGION = boto3.session.Session().region_name
-          DC_ACCOUNT = boto3.client('sts').get_caller_identity()['Account']
+          BUCKET = os.environ["BUCKET_NAME"]
+          PREFIX = os.environ["PREFIX"]
+          ROLE_NAME = os.environ['ROLENAME']
+          REGIONS = [r.strip() for r in os.environ.get("REGIONS").split(',') if r]
+          local_file = "/tmp/data.json"
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           def lambda_handler(event, context):
-              """ This lambda collects ECS Chargeback data and must be
-              called from the corresponding Step Function to orchestrate
-              """
-              logger.info(f"Event data: {event}")
-              sub_uuid = {"lambda-request-id": context.aws_request_id, "lambda-log-group": context.log_group_name, "lambda-log-stream": context.log_stream_name}
-              main_exe_uuid = event.get("main_exe_uuid", str(uuid.uuid4()))
-              stack_version = event.get("stack_version", "")
-              total_services = 0
+              collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+              if 'account' not in event:
+                  raise ValueError(
+                      "Please do not trigger this Lambda manually."
+                      "Find the corresponding state machine in Step Functions and Trigger from there."
+                  )
 
               try:
-                  region = boto3.session.Session().region_name
-                  account = json.loads(event.get("account","{}"))
-                  payer_id = account.get("payer_id")
-                  account_id = account.get("account_id")
-                  if not (payer_id and account_id):
-                      raise Exception(STATUS_NOT_ACCEPTABLE) #pylint: disable=broad-exception-raised
-
-                  key = datetime.now().strftime(f"{MODULE}/{MODULE}-data/payer_id={payer_id}/year=%Y/month=%m/day=%d/{account_id}-%Y-%m-%d.json")
-                  location=f"s3://{BUCKET}/{key}"
-                  with open(TMP_FILE, "w") as f:
+                  account = json.loads(event["account"])
+                  account_id = account["account_id"]
+                  account_name = account["account_name"]
+                  payer_id = account["payer_id"]
+                  logger.info(f"Collecting data for account: {account_id}")
+                  with open(local_file, "w") as f:
                       for region in REGIONS:
                           services_counter = 0
                           try:
@@ -204,24 +187,24 @@ Resources:
                                               }
                                               jsondata = json.dumps(data)
                                               services_counter += 1
+                                              #print(jsondata)
                                               f.write(jsondata + "\n")
-                              total_services += services_counter
-                              error = None
-                          except Exception as exc: #pylint: disable=broad-exception-caught
-                              error=exc
-                          #log success or failure
-                          create_log_entry(payer_id=payer_id, account_id=account_id, region=region, record_count=services_counter, location=location,
-                                          main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, error=error, stack_version=stack_version)
-                  if total_services > 0:
-                      client = boto3.client("s3")
-                      client.upload_file(TMP_FILE, BUCKET, key)
-                  return create_log_entry(payer_id=payer_id, account_id=account_id, region=", ".join(REGIONS), record_count=total_services, location=location,
-                                          main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, is_summary=True, stack_version=stack_version)
+                              print(f"{services_counter} services gathered in {region}")
+                          except Exception as exc:
+                              if 'The security token included in the request is invalid' in str(exc):
+                                  logging.info(f'region {region} is not activated in {account_id}')
+                              else:
+                                  print(region, account_id, type(exc), exc)
 
-              except Exception as exc: #pylint: disable=broad-exception-caught
-                  create_log_entry(payer_id=payer_id, account_id=account_id, region=", ".join(REGIONS), record_count=total_services,
-                                  main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, error=exc, stack_version=stack_version)
-                  raise exc
+                  if os.path.getsize(local_file) == 0:
+                      print(f"No data in file for {PREFIX}")
+                  else:
+                      key = datetime.now().strftime(f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year=%Y/month=%m/day=%d/{account_id}-%Y-%m-%d.json")
+                      client = boto3.client("s3")
+                      client.upload_file(local_file, BUCKET, key)
+                      print(f"Data in s3 - {key}")
+              except Exception as exc:
+                  logging.warning(exc)
 
           def assume_session(account_id, region):
               partition = boto3.session.Session().get_partition_for_region(region_name=region)
@@ -238,79 +221,6 @@ Resources:
           def list_ecs_regions():
               return boto3.Session().get_available_regions('ecs')
 
-          def create_log_entry(payer_id="", account_id=None, status_code=None, region="", module_function="data-collection-lambda", sub_code="",
-                              params="", record_count=0, record_context="", description=None, location="", error=None, main_exe_uuid="", sub_uuid={}, is_summary=False, store_it=True, stack_version="", subversion=""): # pylint: disable=too-many-locals
-              """Format log entry for logging."""
-              status_code, description = status_handler(error, record_count, is_summary, status_code, description)
-              log_entry = {
-                  "Timestamp": str(datetime.now().isoformat()),
-                  "DataCollectionRegion": DC_REGION,
-                  "DataCollectionAccountId": DC_ACCOUNT,
-                  "Module": MODULE,
-                  "ModuleFunction": module_function,
-                  "Params": params,
-                  "PayerId": payer_id,
-                  "AccountId": account_id if account_id else payer_id,
-                  "Region": region,
-                  "StatusCode": status_code,
-                  "SubCode": sub_code,
-                  "RecordCount": record_count,
-                  "Description": description,
-                  "DataLocation": location if record_count > 0 else "",
-                  "MainExeUuid": main_exe_uuid,
-                  "SubUuid": sub_uuid,
-                  "Service": "Lambda",
-                  "StackVersion": stack_version,
-                  "SubVersion": subversion
-              }
-              if status_code >= 400:
-                  logger.error(description)
-              if store_it:
-                  store_log_entry(log_entry)
-              logger.info(f"Result: {log_entry}")
-              return {"statusCode": status_code, "logEntry": log_entry}
-
-          def status_handler(error=None, record_count=0, is_summary=False, status_code=None, description=""):
-              """Codify status codes and descriptions for consistent logging."""
-              if status_code:
-                  return status_code, description
-              if error:
-                  exc_msg = str(error)
-                  if exc_msg == str(STATUS_NOT_ACCEPTABLE):
-                      return STATUS_NOT_ACCEPTABLE, ("InvocationError: Account parameters are not properly defined in request."
-                          f"Please only trigger this Lambda from the corresponding StepFunction for this module.{' '+description if description else ''}")
-                  if "AccessDenied" in exc_msg:
-                      return STATUS_NOT_AUTHORIZED, f"AccessDenied: Unable to assume role {ROLE_NAME}. Please make sure the role exists. {exc_msg}"
-                  if 'The security token included in the request is invalid' in exc_msg:
-                      return STATUS_FORBIDDEN, f'{type(error).__name__}: Region might not be activated.'
-                  return STATUS_SERVER_ERROR, f"{type(error).__name__}: with message {exc_msg}"
-              # For all others, assume success
-              description = f"Execution successful: {record_count} record{'s' if (record_count > 1 or record_count == 0) else ''} found.{' '+description if description else ''}"
-              if is_summary:
-                  return STATUS_MULTI_STATUS, "Multi-part "+description
-              if record_count == 0:
-                  return STATUS_OKAY_NO_CONTENT, description
-              return STATUS_OKAY, description
-
-          def store_log_entry(log_entry):
-              """Store the log entry to S3."""
-              key = datetime.now().strftime(f"logs/modules/%Y/%m/%d/{MODULE}-{uuid.uuid4()}.json")
-              try:
-                  boto3.client('s3').put_object(Body=json.dumps(log_entry), Bucket=BUCKET, Key=key)
-              except Exception as exc: #pylint: disable=broad-exception-caught
-                  logger.error(f"Error storing log entry to S3: {exc}")
-
-          STATUS_OKAY = 200
-          STATUS_OKAY_NO_CONTENT = 204
-          STATUS_MULTI_STATUS = 207
-          STATUS_NOT_AUTHORIZED = 401
-          STATUS_FORBIDDEN = 403
-          STATUS_NOT_FOUND = 404
-          STATUS_NOT_ACCEPTABLE = 406
-          STATUS_CONFLICT = 409
-          STATUS_TOO_MANY_REQUESTS = 429
-          STATUS_SERVER_ERROR = 500
-          STATUS_NOT_IMPLEMENTED = 501
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
@@ -318,8 +228,8 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
-          MODULE: !Ref CFDataName
-          ROLE_NAME: !Ref MultiAccountRoleName
+          PREFIX: !Ref CFDataName
+          ROLENAME: !Ref MultiAccountRoleName
           REGIONS: !Ref RegionsInScope
     Metadata:
       cfn_nag:
@@ -365,7 +275,6 @@ Resources:
         Account: !Ref AWS::AccountId
         Prefix: !Ref ResourcePrefix
         Bucket: !Ref DestinationBucket
-        DataCollectionStackID: !Ref StackID
 
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'

@@ -1,9 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Retrieves AWS Compute Optimizer information from across an organization
 Parameters:
-  StackID:
-    Type: String
-    Description: Arn of the main stack
   DestinationBucket:
     Type: String
     Description: Name of the S3 Bucket to be created to hold data information.
@@ -505,7 +502,6 @@ Resources:
         Account: !Ref AWS::AccountId
         Prefix: !Ref ResourcePrefix
         Bucket: !Ref DestinationBucket
-        DataCollectionStackID: !Ref StackID
 
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'

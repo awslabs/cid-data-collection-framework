@@ -1,9 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Retrieves AWS Health Events details across AWS organization
 Parameters:
-  StackID:
-    Type: String
-    Description: Arn of the main stack
   DatabaseName:
     Type: String
     Description: Name of the Athena database to be created to hold lambda information
@@ -50,13 +47,13 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
-  DetailStepFunctionTemplate:
-    Type: String
-    Description: JSON representation of the detail retrieval StepFunction template
   DataBucketsKmsKeysArns:
     Type: String
     Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
     Default: ""
+  DetailStepFunctionTemplate:
+    Type: String
+    Description: JSON representation of the detail retrieval StepFunction template
 
 Conditions:
   NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
@@ -140,10 +137,6 @@ Resources:
       Architectures: [x86_64]
       Code:
         ZipFile: |
-          #Module detail:
-          # Name: Health Events
-          # Account scope: Payers
-          # Region(s): us-east-1 (default) or local active endpoint
           import os
           import json
           import uuid
@@ -155,22 +148,19 @@ Resources:
           import boto3
           from botocore.config import Config
 
-          BUCKET = os.environ.get("BUCKET_NAME")
-          MODULE = os.environ.get("MODULE")
-          ROLE_NAME = os.environ.get('ROLE_NAME')
-          TMP_FILE = "/tmp/data.json"
-          START_TIME = str(datetime.now().isoformat())
+          logger = logging.getLogger()
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+
+          BUCKET_NAME = os.environ['BUCKET_NAME']
+          ROLENAME = os.environ['ROLENAME']
+          PREFIX = os.environ['PREFIX']
           REGIONS = [r.strip() for r in os.environ.get("REGIONS", "").split(',') if r]
           if len(REGIONS) > 0:
               REGIONS.append('global')
-          LOOKBACK = int(os.environ.get('LOOKBACK', "0"))
-          DETAIL_SM_ARN = os.environ.get('DETAIL_SM_ARN')
+          LOOKBACK = int(os.environ['LOOKBACK'])
+          DETAIL_SM_ARN = os.environ['DETAIL_SM_ARN']
+          TMP_FILE = "/tmp/data.json"
           MAX_RETRIES = int(os.environ.get('MAX_RETRIES', "10"))
-          DC_REGION = boto3.session.Session().region_name
-          DC_ACCOUNT = boto3.client('sts').get_caller_identity()['Account']
-
-          logger = logging.getLogger()
-          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           config = Config(retries={"max_attempts": MAX_RETRIES, "mode": "adaptive"})
 
@@ -339,203 +329,104 @@ Resources:
               and must be called from the corresponding Step Function to orchestrate
               """
               logger.info(f"Event data: {event}")
-              count = 0
-              main_exe_uuid = event.get("main_exe_uuid", str(uuid.uuid4()))
-              sub_uuid = event.get("sub_uuid", {})
-              sub_uuid.update({"lambda-request-id": context.aws_request_id, "lambda-log-group": context.log_group_name, "lambda-log-stream": context.log_stream_name})
-              params = event.get("params", "")
-              stack_version = event.get("stack_version", "")
-              account_id = ""
-              payer_id = ""
-
-              try:
-                  region = get_active_health_region()
-                  partition = boto3.session.Session().get_partition_for_region(region_name=region)
-                  account = event.get("account", "{}")
-                  items = event.get("items", None)
-                  ingestion_time = datetime.fromtimestamp(int(event.get('ingestion_time', 0)))
-                  is_summary_mode = params != "detail"
-                  if is_summary_mode:
-                      try:
-                          account = json.loads(account)
-                      except:
-                          raise Exception(STATUS_NOT_ACCEPTABLE) #pylint: disable=broad-exception-raised
-                  account_id = account.get("account_id")
-                  payer_id = account_id
-                  if (not (account_id) or ((not is_summary_mode) and (not items))):
-                      raise Exception(STATUS_NOT_ACCEPTABLE) #pylint: disable=broad-exception-raised
-
-                  logger.info(f"Executing {'summary' if is_summary_mode else 'detail'} mode flow")
-                  creds = boto3.client('sts').assume_role(
-                      RoleArn=f"arn:{partition}:iam::{account_id}:role/{ROLE_NAME}",
-                      RoleSessionName="data_collection"
-                  )['Credentials']
-                  health_client = boto3.client(
-                      'health',
-                      config=config,
-                      region_name=region,
-                      aws_access_key_id=creds['AccessKeyId'],
-                      aws_secret_access_key=creds['SecretAccessKey'],
-                      aws_session_token=creds['SessionToken'],
+              account = event.get('account')
+              batch_input = event.get('BatchInput')
+              items = event.get('Items')
+              if not (account or batch_input):
+                  raise ValueError(
+                      "Please do not trigger this Lambda manually."
+                      "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
+              is_summary_mode = batch_input == None
+              logger.info(f"Executing in {'summary' if is_summary_mode else 'detail'} mode flow")
+              account = json.loads(account) if is_summary_mode else batch_input.get('account')
+              account_id = account["account_id"]
+              region = get_active_health_region()
+              partition = boto3.session.Session().get_partition_for_region(region_name=region)
+              creds = boto3.client('sts').assume_role(
+                  RoleArn=f"arn:{partition}:iam::{account_id}:role/{ROLENAME}",
+                  RoleSessionName="data_collection"
+              )['Credentials']
+              health_client = boto3.client(
+                  'health',
+                  config=config,
+                  region_name=region,
+                  aws_access_key_id=creds['AccessKeyId'],
+                  aws_secret_access_key=creds['SecretAccessKey'],
+                  aws_session_token=creds['SessionToken'],
+              )
 
-                  location = ""
-                  if is_summary_mode:
-                      start_from, start_to = calculate_dates(BUCKET, f"{MODULE}/{MODULE}-detail-data/payer_id={account_id}")
-                      logger.info(f"Collecting events from {start_from} to {start_to}")
-                      args = {
-                          'maxResults':100,
-                          'filter': {
-                              'lastUpdatedTime': {
-                                  'from': start_from.strftime('%Y-%m-%dT%H:%M:%S%z'),
-                              },
-                          }
+              count = 0
+              if is_summary_mode:
+                  start_from, start_to = calculate_dates(BUCKET_NAME, f"{PREFIX}/{PREFIX}-detail-data/payer_id={account_id}")
+                  logger.info(f"Collecting events from {start_from} to {start_to}")
+                  args = {
+                      'maxResults':100,
+                      'filter': {
+                          'lastUpdatedTime': {
+                              'from': start_from.strftime('%Y-%m-%dT%H:%M:%S%z'),
+                          },
                       }
-                      if len(REGIONS) > 0:
-                          args['filter']['regions'] = REGIONS
+                  }
+                  if len(REGIONS) > 0:
+                      args['filter']['regions'] = REGIONS
 
-                      ingestion_time = datetime.now(timezone.utc)
+                  ingestion_time = datetime.now(timezone.utc)
+                  try:
                       with open(TMP_FILE, "w", encoding='utf-8') as f:
-                          #f.write('eventArn,eventScopeCode\n')
-                          event_list = []
+                          f.write('eventArn,eventScopeCode\n')
                           for _, h_event in enumerate(search(health_client.describe_events_for_organization, args, expression='events')):
-                              event_list.append(
-                                      {
-                                          'eventArn': h_event['arn'],
-                                          'eventScopeCode': h_event['eventScopeCode']
-                                      }
-                                  )
+                              f.write(f'{h_event["arn"]},{h_event["eventScopeCode"]}\n')
                               count += 1
-                          f.write(to_json(event_list))
                       if count > 0:
-                          key = ingestion_time.strftime(f"{MODULE}/{MODULE}-summary-data/payer_id={account_id}/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
-                          location = f's3://{BUCKET}/{key}'
-                          boto3.client('s3').upload_file(TMP_FILE, BUCKET, key)
+                          key = ingestion_time.strftime(f"{PREFIX}/{PREFIX}-summary-data/payer_id={account_id}/year=%Y/month=%m/day=%d/%Y-%m-%d.csv")
+                          boto3.client('s3').upload_file(TMP_FILE, BUCKET_NAME, key)
+                          logger.info(f'Uploaded {count} summary records to s3://{BUCKET_NAME}/{key}')
                           # clear any previous runs for the same day
-                          bucket = boto3.resource('s3').Bucket(BUCKET)
-                          bucket.objects.filter(Prefix=ingestion_time.strftime(f"{MODULE}/{MODULE}-detail-data/payer_id={account_id}/year=%Y/month=%m/day=%d")).delete()
+                          bucket = boto3.resource('s3').Bucket(BUCKET_NAME)
+                          bucket.objects.filter(Prefix=ingestion_time.strftime(f"{PREFIX}/{PREFIX}-detail-data/payer_id={account_id}/year=%Y/month=%m/day=%d")).delete()
                           sf = boto3.client('stepfunctions')
                           sf_input = {
-                              "bucket": BUCKET,
+                              "bucket": BUCKET_NAME,
                               "file": key,
                               "account": account,
-                              "ingestion_time": int(round(ingestion_time.timestamp())),
-                              "main_exe_uuid": main_exe_uuid,
-                              "params": "detail",
-                              "stack_version": stack_version
+                              "ingestion_time": int(round(ingestion_time.timestamp()))
                           }
-                          sf_input = json.dumps(sf_input).replace('"', '\"') # need to escape the json for SF
-                          sf.start_execution(stateMachineArn=DETAIL_SM_ARN, input=sf_input) # launch the detail gathering SF
+                          sf_input = json.dumps(sf_input).replace('"', '\"') #need to escape the json for SF
+                          sf.start_execution(stateMachineArn=DETAIL_SM_ARN, input=sf_input)
+                      else:
+                          logger.info(f"No records found")
+                  except Exception as exc:
+                      if 'Organizational View feature is not enabled' in str(exc):
+                          logger.error(f"Payer {account_id} does not have Organizational View. See https://docs.aws.amazon.com/health/latest/ug/enable-organizational-view-in-health-console.html")
+                      else:
+                          logger.error(f"Error: {exc}")
 
-                  else: #detail mode
-                      with open(TMP_FILE, "w", encoding='utf-8') as f:
-                          for item in items:
-                              h_event = {'arn': item['eventArn'], 'eventScopeCode': item['eventScopeCode']}
-                              h_event['payer_account_id'] = account_id
-                              h_event['event_source'] = "aws.health"
-                              h_event['ingestion_time'] = ingestion_time
-                              all_detailed_events = pull_event_details(h_event, health_client)
-                              flatten_events = jmespath.search("[].{"+', '.join([f'{k}: {v}' for k, v in mapping.items()]) + "}", all_detailed_events)
-                              for flatten_event in flatten_events:
-                                  flatten_event = event_item_to_date(flatten_event, time_fields_to_convert)
-                                  # metadata structure can vary and cause schema change issues, force to string
-                                  metadata = flatten_event.get('event_metadata')
-                                  metadata = json.dumps(metadata) if (not isinstance(metadata, str)) and (metadata != None) else metadata
-                                  flatten_event['event_metadata'] = metadata
-                                  f.write(to_json(flatten_event) + '\n')
-                                  count += 1
-                      if count > 0:
-                          rand = uuid.uuid4()
-                          key = ingestion_time.strftime(f"{MODULE}/{MODULE}-detail-data/payer_id={account_id}/year=%Y/month=%m/day=%d/%Y-%m-%d-%H-%M-%S-{rand}.json")
-                          location = f's3://{BUCKET}/{key}'
-                          boto3.client('s3').upload_file(TMP_FILE, BUCKET, key)
-                      #raise Exception("Testing SF error flow")
+              elif items:
+                  ingestion_time = datetime.fromtimestamp(int(batch_input.get('ingestion_time')))
 
-                  return create_log_entry(payer_id=payer_id, account_id=account_id, region=region, params=params, record_count=count, location=location,
-                                          main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, stack_version=stack_version)
-
-              except Exception as exc: #pylint: disable=broad-exception-caught
-                  is_not_activated = 'Organizational View feature is not enabled' in str(exc)
-                  status_code = STATUS_NOT_IMPLEMENTED if is_not_activated else None
-                  description = None if not is_not_activated else (f'Payer {account_id} does not have Organizational View. '
-                                                                  'See https://docs.aws.amazon.com/health/latest/ug/enable-organizational-view-in-health-console.html')
-                  create_log_entry(payer_id=payer_id, account_id=account_id, region=region, params=params, record_count=count,
-                                  main_exe_uuid=main_exe_uuid, sub_uuid=sub_uuid, description=description, status_code=status_code, error=exc, stack_version=stack_version)
-                  raise exc
-
-          def create_log_entry(payer_id="", account_id=None, status_code=None, region="", module_function="data-collection-lambda", sub_code="",
-                              params="", record_count=0, record_context="", description=None, location="", error=None, main_exe_uuid="", sub_uuid={}, is_summary=False, store_it=True, stack_version="", subversion=""): # pylint: disable=too-many-locals
-              """Format log entry for logging."""
-              status_code, description = status_handler(error, record_count, is_summary, status_code, description)
-              log_entry = {
-                  "Timestamp": str(datetime.now().isoformat()),
-                  "DataCollectionRegion": DC_REGION,
-                  "DataCollectionAccountId": DC_ACCOUNT,
-                  "Module": MODULE,
-                  "ModuleFunction": module_function,
-                  "Params": params,
-                  "PayerId": payer_id,
-                  "AccountId": account_id if account_id else payer_id,
-                  "Region": region,
-                  "StatusCode": status_code,
-                  "SubCode": sub_code,
-                  "RecordCount": record_count,
-                  "Description": description,
-                  "DataLocation": location if record_count > 0 else "",
-                  "MainExeUuid": main_exe_uuid,
-                  "SubUuid": sub_uuid,
-                  "Service": "Lambda",
-                  "StackVersion": stack_version,
-                  "SubVersion": subversion
-              }
-              if status_code >= 400:
-                  logger.error(description)
-              if store_it:
-                  store_log_entry(log_entry)
-              logger.info(f"Result: {log_entry}")
-              return {"statusCode": status_code, "logEntry": log_entry}
-
-          def status_handler(error=None, record_count=0, is_summary=False, status_code=None, description=""):
-              """Codify status codes and descriptions for consistent logging."""
-              if status_code:
-                  return status_code, description
-              if error:
-                  exc_msg = str(error)
-                  if exc_msg == str(STATUS_NOT_ACCEPTABLE):
-                      return STATUS_NOT_ACCEPTABLE, ("InvocationError: Account parameters are not properly defined in request."
-                          f"Please only trigger this Lambda from the corresponding StepFunction for this module.{' '+description if description else ''}")
-                  if "AccessDenied" in exc_msg:
-                      return STATUS_NOT_AUTHORIZED, f"AccessDenied: Unable to assume role {ROLE_NAME}. Please make sure the role exists. {exc_msg}"
-                  if 'The security token included in the request is invalid' in exc_msg:
-                      return STATUS_FORBIDDEN, f'{type(error).__name__}: Region might not be activated.'
-                  return STATUS_SERVER_ERROR, f"{type(error).__name__}: with message {exc_msg}"
-              # For all others, assume success
-              description = f"Execution successful: {record_count} record{'s' if (record_count > 1 or record_count == 0) else ''} found.{' '+description if description else ''}"
-              if is_summary:
-                  return STATUS_MULTI_STATUS, "Multi-part "+description
-              if record_count == 0:
-                  return STATUS_OKAY_NO_CONTENT, description
-              return STATUS_OKAY, description
-
-          def store_log_entry(log_entry):
-              """Store the log entry to S3."""
-              key = datetime.now().strftime(f"logs/modules/%Y/%m/%d/{MODULE}-{uuid.uuid4()}.json")
-              try:
-                  boto3.client('s3').put_object(Body=json.dumps(log_entry), Bucket=BUCKET, Key=key)
-              except Exception as exc: #pylint: disable=broad-exception-caught
-                  logger.error(f"Error storing log entry to S3: {exc}")
-
-          STATUS_OKAY = 200
-          STATUS_OKAY_NO_CONTENT = 204
-          STATUS_MULTI_STATUS = 207
-          STATUS_NOT_AUTHORIZED = 401
-          STATUS_FORBIDDEN = 403
-          STATUS_NOT_FOUND = 404
-          STATUS_NOT_ACCEPTABLE = 406
-          STATUS_CONFLICT = 409
-          STATUS_TOO_MANY_REQUESTS = 429
-          STATUS_SERVER_ERROR = 500
-          STATUS_NOT_IMPLEMENTED = 501
+                  with open(TMP_FILE, "w", encoding='utf-8') as f:
+                      for item in items:
+                          h_event = {'arn': item['eventArn'], 'eventScopeCode': item['eventScopeCode']}
+                          h_event['payer_account_id'] = account_id
+                          h_event['event_source'] = "aws.health"
+                          h_event['ingestion_time'] = ingestion_time
+                          all_detailed_events = pull_event_details(h_event, health_client)
+                          flatten_events = jmespath.search("[].{"+', '.join([f'{k}: {v}' for k, v in mapping.items()]) + "}", all_detailed_events)
+                          for flatten_event in flatten_events:
+                              flatten_event = event_item_to_date(flatten_event, time_fields_to_convert)
+                              # metadata structure can vary and cause schema change issues, force to string
+                              metadata = flatten_event.get('event_metadata')
+                              metadata = json.dumps(metadata) if (not isinstance(metadata, str)) and (metadata != None) else metadata
+                              flatten_event['event_metadata'] = metadata
+                              f.write(to_json(flatten_event) + '\n')
+                              count += 1
+                  if count > 0:
+                      rand = uuid.uuid4()
+                      key = ingestion_time.strftime(f"{PREFIX}/{PREFIX}-detail-data/payer_id={account_id}/year=%Y/month=%m/day=%d/%Y-%m-%d-%H-%M-%S-{rand}.json")
+                      boto3.client('s3', config=config).upload_file(TMP_FILE, BUCKET_NAME, key)
+                      logger.info(f'Uploaded {count} summary records to s3://{BUCKET_NAME}/{key}')
+              return {"status":"200","Recorded":f'"{count}"'}
       Handler: "index.lambda_handler"
       MemorySize: 2688
       Timeout: 900
@@ -543,8 +434,8 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
-          MODULE: !Ref CFDataName
-          ROLE_NAME: !Ref ManagementRoleName
+          PREFIX: !Ref CFDataName
+          ROLENAME: !Ref ManagementRoleName
           #REGIONS: -- defining regions can miss events within the region list so default to global
           LOOKBACK: 730 # 2 years
           DETAIL_SM_ARN: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine'
@@ -585,14 +476,13 @@ Resources:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: '[]'
-        CollectionType: 'Payers'
-        Params: 'summary'
+        CollectionType: "Payers"
+        Params: ''
         Module: !Ref CFDataName
         DeployRegion: !Ref AWS::Region
         Account: !Ref AWS::AccountId
         Prefix: !Ref ResourcePrefix
         Bucket: !Ref DestinationBucket
-        DataCollectionStackID: !Ref StackID
 
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'
@@ -614,16 +504,92 @@ Resources:
       StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-detail-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
-      DefinitionS3Location:
-        Bucket: !Ref CodeBucket
-        Key: !Ref DetailStepFunctionTemplate
+      DefinitionString: |
+        {
+          "Comment": "Collects Health Events",
+          "StartAt": "DetailProcessor Map",
+          "States": {
+            "DetailProcessor Map": {
+              "Type": "Map",
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "DISTRIBUTED",
+                  "ExecutionType": "STANDARD"
+                },
+                "StartAt": "DetailLambda Invoke",
+                "States": {
+                  "DetailLambda Invoke": {
+                    "Type": "Task",
+                    "Resource": "arn:${Partition}:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "Payload.$": "$",
+                      "FunctionName": "${ModuleLambdaARN}"
+                    },
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException",
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 1,
+                        "MaxAttempts": 3,
+                        "BackoffRate": 2
+                      }
+                    ],
+                    "End": true
+                  }
+                }
+              },
+              "Label": "DetailProcessorMap",
+              "MaxConcurrency": ${MaxConcurrentBatches},
+              "ItemReader": {
+                "Resource": "arn:${Partition}:states:::s3:getObject",
+                "ReaderConfig": {
+                  "InputType": "CSV",
+                  "CSVHeaderLocation": "FIRST_ROW"
+                },
+                "Parameters": {
+                  "Bucket.$": "$.bucket",
+                  "Key.$": "$.file"
+                }
+              },
+              "ItemBatcher": {
+                "MaxItemsPerBatch": ${ItemsPerBatch},
+                "BatchInput": {
+                  "account.$": "$.account",
+                  "ingestion_time.$": "$.ingestion_time"
+                }
+              },
+              "Next": "CrawlerStepFunctionStartExecution"
+            },
+            "CrawlerStepFunctionStartExecution": {
+              "Type": "Task",
+              "Resource": "arn:${Partition}:states:::states:startExecution.sync:2",
+              "Parameters": {
+                "StateMachineArn": "arn:${Partition}:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
+                "Input": {
+                  "crawlers": ${Crawlers}
+                }
+              },
+              "End": true
+            }
+          },
+          "TimeoutSeconds": 14400
+        }
       DefinitionSubstitutions:
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-detail-Crawler"]'
+        CollectionType: "Payers"
+        Params: ''
         Module: !Ref CFDataName
         DeployRegion: !Ref AWS::Region
         Account: !Ref AWS::AccountId
         Prefix: !Ref ResourcePrefix
+        ItemsPerBatch: 50
+        MaxConcurrentBatches: 1
         Partition: !Ref AWS::Partition
         Bucket: !Ref DestinationBucket
     Metadata:

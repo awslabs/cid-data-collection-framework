@@ -17,7 +17,7 @@
         "EXE_UUID": "{% $split($states.context.Execution.Id, ':')[7] %}",
         "EXE_START_TIME_SPLIT": "{% $split($states.context.Execution.StartTime, /[-:T.]/) %}",
         "EXE_START_TIME": "{% $replace($states.context.Execution.StartTime,'Z','') %}",
-        "STACK_ID": "${DataCollectionStackID}"
+        "STACK_VERSION": "v3.9.1"
       },
       "Next": "SetGlobalVariables2"
     },
@@ -28,18 +28,6 @@
         "LOG_KEY_BASE": "{% 'logs/modules/'&$EXE_START_TIME_SPLIT[0]&'/'&$EXE_START_TIME_SPLIT[1]&'/'&$EXE_START_TIME_SPLIT[2]&'/'&$MODULE&'-sf-' %}",
         "CRAWLER_STATE_MACHINE": "{% 'arn:aws:states:'&$DATA_COLLECTION_REGION&':'&$DATA_COLLECTION_ACCOUNT&':stateMachine:'&$PREFIX&'CrawlerExecution-StateMachine' %}",
         "ACCT_COLLECTOR_LAMBDA": "{% 'arn:aws:lambda:'&$DATA_COLLECTION_REGION&':'&$DATA_COLLECTION_ACCOUNT&':function:'&$PREFIX&'account-collector-Lambda' %}"
-      },
-      "Next": "GetStackVersion"
-    },
-    "GetStackVersion": {
-      "Type": "Task",
-      "Arguments": {
-        "StackName": "{% $STACK_ID %}"
-      },
-      "Resource": "arn:aws:states:::aws-sdk:cloudformation:describeStacks",
-      "QueryLanguage": "JSONata",
-      "Assign": {
-        "STACK_VERSION": "{% ($match($states.result.Stacks[0].Description, /([0-9]+\\.[0-9]+\\.[0-9]+)/)).match %}"
       },
       "Next": "EntryLog"
     },

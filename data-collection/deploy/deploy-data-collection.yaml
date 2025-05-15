@@ -129,9 +129,54 @@ Mappings:
     us-west-2:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-west-2 }
   StepFunctionCode:
     main-state-machine:           {TemplatePath: cfn/data-collection/v3.9.1/source/step-functions/main-state-machine.json}
-    crawler:                      {TemplatePath: cfn/data-collection/v3.9.1/source/step-functions/crawler-state-machine.json}
-    standalone:                   {TemplatePath: cfn/data-collection/v3.9.1/source/step-functions/standalone-state-machine.json}
+    crawler-state-machine:        {TemplatePath: cfn/data-collection/v3.9.1/source/step-functions/crawler-state-machine.json}
+    standalone-state-machine:     {TemplatePath: cfn/data-collection/v3.9.1/source/step-functions/standalone-state-machine.json}
     health-detail-state-machine:  {TemplatePath: cfn/data-collection/v3.9.1/source/step-functions/health-detail-state-machine.json}
+  ManagedTables:
+    LogTable:
+      table:
+        - Name: dc_execution_log
+          TableType: EXTERNAL_TABLE
+          PartitionKeys:
+          - { Name: logdate,    Type: string }
+          StorageDescriptor:
+            Columns:
+            - { Name: timestamp,                   Type: timestamp }
+            - { Name: datacollectionregion,        Type: string }
+            - { Name: datacollectionaccountid,     Type: string }
+            - { Name: module,                      Type: string }
+            - { Name: modulefunction,              Type: string }
+            - { Name: params,                      Type: string }
+            - { Name: payerid,                     Type: string }
+            - { Name: accountid,                   Type: string }
+            - { Name: region,                      Type: string }
+            - { Name: statuscode,                  Type: int }
+            - { Name: subcode,                     Type: string }
+            - { Name: recordcount,                 Type: int }
+            - { Name: description,                 Type: string }
+            - { Name: datalocation,                Type: string }
+            - { Name: mainexeuuid,                 Type: string }
+            - { Name: subuuid,                     Type: string }
+            - { Name: service,                     Type: string }
+            - { Name: stackversion,                Type: string }
+            - { Name: subversion,                  Type: string }
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            Location: !Sub "s3://${DestinationBucket}${AWS::AccountId}/logs/modules/"
+            Parameters: {}
+            SerdeInfo:
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+              Parameters:
+                serialization.format: '1'
+          Parameters:
+            EXTERNAL: 'TRUE'
+            projection.logdate.format: yyyy/MM/dd
+            projection.logdate.interval: '1'
+            projection.logdate.interval.unit: DAYS
+            projection.logdate.range: 2025/01/01,NOW
+            projection.logdate.type: date
+            projection.enabled: 'true'
+            storage.location.template: !Sub "s3://${DestinationBucket}${AWS::AccountId}/logs/modules/${!logdate}"
 
 Parameters:
   DestinationBucket:
@@ -383,7 +428,7 @@ Resources:
             Action: s3:*
             Effect: Deny
             Principal: "*"
-            Resource: 
+            Resource:
               - !Sub "${S3Bucket.Arn}"
               - !Sub "${S3Bucket.Arn}/*"
             Condition:
@@ -393,7 +438,7 @@ Resources:
             Action: s3:*
             Effect: Deny
             Principal: "*"
-            Resource: 
+            Resource:
               - !Sub "${S3Bucket.Arn}"
               - !Sub "${S3Bucket.Arn}/*"
             Condition:
@@ -716,10 +761,12 @@ Resources:
               else:
                   # Delete all tables updated by previous versions of crawlers.
                   # If not crawler will not be able to update the table and will create a new one with a random name.
+                  # The exception to this is if a table was created using a date project for which no crawler will touch it
                   for table in glue_client.get_paginator('get_tables').paginate(DatabaseName=database_name).search('TableList'):
                       table_name = table.get('Name')
                       updated_by = table.get('Parameters', {}).get('UPDATED_BY_CRAWLER', '')
-                      if not updated_by.startswith(resource_prefix):
+                      is_projection = table.get('Parameters', {}).get('projection.enabled', 'false').lower()
+                      if (not updated_by.startswith(resource_prefix)) and is_projection == 'false':
                           glue_client.delete_table(DatabaseName=database_name, Name=table_name)
                           print(f'table {table_name} was deleted to avoid crawler confusion')
               return 'SUCCESS', 'success'
@@ -851,7 +898,7 @@ Resources:
       RoleArn: !GetAtt StepFunctionExecutionRole.Arn
       DefinitionS3Location:
         Bucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        Key: !FindInMap [StepFunctionCode, crawler-v2, TemplatePath]
+        Key: !FindInMap [StepFunctionCode, crawler-state-machine, TemplatePath]
 
   StepFunctionExecutionRole:
     Type: AWS::IAM::Role
@@ -930,19 +977,6 @@ Resources:
                   StringEquals:
                     cloudwatch:namespace: CID-DataCollection
 
-        - PolicyName: "CloudFormationStackVersionRead" #Used for reading the deployed version number of the stack
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - cloudformation:ListStacks
-                Resource: '*'
-              - Effect: "Allow"
-                Action:
-                  - cloudformation:DescribeStacks
-                Resource: !Ref "AWS::StackId"
-
   StepFunctionExecutionRoleInvokeAccountCollectorPolicy:
     Type: 'AWS::IAM::Policy'
     Condition: DeployAccountCollector
@@ -992,8 +1026,10 @@ Resources:
                   - lambda:InvokeFunction
                 Resource:
                   - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ResourcePrefix}*"
-  TableLogs:
+  LogTable:
     Type: AWS::Glue::Table
+    DependsOn:
+      - InitExecutor
     Properties:
       CatalogId: !Ref "AWS::AccountId"
       DatabaseName: !Ref DatabaseName
@@ -1026,7 +1062,8 @@ Resources:
           InputFormat: org.apache.hadoop.mapred.TextInputFormat
           OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
           Location: !Sub "s3://${DestinationBucket}${AWS::AccountId}/logs/modules/"
-          Parameters: {}
+          Parameters:
+            UPDATED_BY_CRAWLER: CID-DC-no-crawler-needed
           SerdeInfo:
             SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
             Parameters:
@@ -1058,10 +1095,9 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        StackID: !Ref "AWS::StackId"
 
   RightsizeModule:
     Type: AWS::CloudFormation::Stack
@@ -1080,10 +1116,9 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        StackID: !Ref "AWS::StackId"
 
   CostAnomalyModule:
     Type: AWS::CloudFormation::Stack
@@ -1102,11 +1137,10 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         LambdaManageGlueTableARN: !GetAtt LambdaManageGlueTable.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        StackID: !Ref "AWS::StackId"
 
   SupportCasesModule:
     Type: AWS::CloudFormation::Stack
@@ -1125,10 +1159,9 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        StackID: !Ref "AWS::StackId"
 
   BackupModule:
     Type: AWS::CloudFormation::Stack
@@ -1147,10 +1180,9 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        StackID: !Ref "AWS::StackId"
 
   InventoryCollectorModule:
     Type: AWS::CloudFormation::Stack
@@ -1169,7 +1201,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         LambdaManageGlueTableARN: !GetAtt LambdaManageGlueTable.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
@@ -1178,7 +1210,6 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
-        StackID: !Ref "AWS::StackId"
 
   PricingModule:
     Type: AWS::CloudFormation::Stack
@@ -1202,7 +1233,6 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
-        StackID: !Ref "AWS::StackId"
 
   ComputeOptimizerModule:
     Type: AWS::CloudFormation::Stack
@@ -1225,10 +1255,9 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        StackID: !Ref "AWS::StackId"
 
   EcsChargebackModule:
     Type: AWS::CloudFormation::Stack
@@ -1247,7 +1276,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:
@@ -1255,7 +1284,6 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
-        StackID: !Ref "AWS::StackId"
 
   RDSUsageModule:
     Type: AWS::CloudFormation::Stack
@@ -1274,7 +1302,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:
@@ -1282,7 +1310,6 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
-        StackID: !Ref "AWS::StackId"
 
   EUCUsageModule:
     Type: AWS::CloudFormation::Stack
@@ -1301,7 +1328,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:
@@ -1309,7 +1336,6 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
-        StackID: !Ref "AWS::StackId"
 
   OrgDataModule:
     Type: AWS::CloudFormation::Stack
@@ -1328,10 +1354,9 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        StackID: !Ref "AWS::StackId"
 
   BudgetsModule:
     Type: AWS::CloudFormation::Stack
@@ -1350,10 +1375,9 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        StackID: !Ref "AWS::StackId"
 
   TransitGatewayModule:
     Type: AWS::CloudFormation::Stack
@@ -1372,7 +1396,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:
@@ -1380,7 +1404,6 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
-        StackID: !Ref "AWS::StackId"
 
   AWSFeedsModule:
     Type: AWS::CloudFormation::Stack
@@ -1397,7 +1420,7 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, standalone, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, standalone-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1415,7 +1438,7 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, standalone-v1, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, standalone-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1436,11 +1459,10 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        DetailStepFunctionTemplate: !FindInMap [StepFunctionCode, health-detail-state-machine-v2, TemplatePath]
-        StackID: !Ref "AWS::StackId"
+        DetailStepFunctionTemplate: !FindInMap [StepFunctionCode, health-detail-state-machine, TemplatePath]
 
   LicenseManagerModule:
     Type: AWS::CloudFormation::Stack
@@ -1459,10 +1481,9 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        StackID: !Ref "AWS::StackId"
 
   ServiceQuotasModule:
     Type: AWS::CloudFormation::Stack
@@ -1481,7 +1502,7 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine-v4, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:
@@ -1489,7 +1510,6 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
-        StackID: !Ref "AWS::StackId"
 
   QuickSightModule:
     Type: AWS::CloudFormation::Stack
@@ -1506,10 +1526,9 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, standalone-v2, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, standalone-state-machine, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        StackID: !Ref "AWS::StackId"
 
   AccountCollector:
     Type: AWS::CloudFormation::Stack

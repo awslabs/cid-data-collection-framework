@@ -14,5 +14,5 @@ version=$(jq -r '.version' data-collection/utils/version.json)
 
 echo "Sync to $bucket"
 aws s3 sync $code_path/       s3://$bucket/cfn/data-collection/
-aws s3 sync $code_path/       s3://$bucket/cfn/data-collection/$version/ --delete
+aws s3 sync $code_path/       s3://$bucket/cfn/data-collection/v$version/ --delete
 echo 'Done'
