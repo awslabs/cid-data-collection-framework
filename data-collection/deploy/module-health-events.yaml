@@ -501,84 +501,12 @@ Resources:
   StepFunctionDetail:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-detail-StateMachine'
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
-      DefinitionString: |
-        {
-          "Comment": "Collects Health Events",
-          "StartAt": "DetailProcessor Map",
-          "States": {
-            "DetailProcessor Map": {
-              "Type": "Map",
-              "ItemProcessor": {
-                "ProcessorConfig": {
-                  "Mode": "DISTRIBUTED",
-                  "ExecutionType": "STANDARD"
-                },
-                "StartAt": "DetailLambda Invoke",
-                "States": {
-                  "DetailLambda Invoke": {
-                    "Type": "Task",
-                    "Resource": "arn:${Partition}:states:::lambda:invoke",
-                    "OutputPath": "$.Payload",
-                    "Parameters": {
-                      "Payload.$": "$",
-                      "FunctionName": "${ModuleLambdaARN}"
-                    },
-                    "Retry": [
-                      {
-                        "ErrorEquals": [
-                          "Lambda.ServiceException",
-                          "Lambda.AWSLambdaException",
-                          "Lambda.SdkClientException",
-                          "Lambda.TooManyRequestsException"
-                        ],
-                        "IntervalSeconds": 1,
-                        "MaxAttempts": 3,
-                        "BackoffRate": 2
-                      }
-                    ],
-                    "End": true
-                  }
-                }
-              },
-              "Label": "DetailProcessorMap",
-              "MaxConcurrency": ${MaxConcurrentBatches},
-              "ItemReader": {
-                "Resource": "arn:${Partition}:states:::s3:getObject",
-                "ReaderConfig": {
-                  "InputType": "CSV",
-                  "CSVHeaderLocation": "FIRST_ROW"
-                },
-                "Parameters": {
-                  "Bucket.$": "$.bucket",
-                  "Key.$": "$.file"
-                }
-              },
-              "ItemBatcher": {
-                "MaxItemsPerBatch": ${ItemsPerBatch},
-                "BatchInput": {
-                  "account.$": "$.account",
-                  "ingestion_time.$": "$.ingestion_time"
-                }
-              },
-              "Next": "CrawlerStepFunctionStartExecution"
-            },
-            "CrawlerStepFunctionStartExecution": {
-              "Type": "Task",
-              "Resource": "arn:${Partition}:states:::states:startExecution.sync:2",
-              "Parameters": {
-                "StateMachineArn": "arn:${Partition}:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
-                "Input": {
-                  "crawlers": ${Crawlers}
-                }
-              },
-              "End": true
-            }
-          },
-          "TimeoutSeconds": 14400
-        }
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref DetailStepFunctionTemplate
       DefinitionSubstitutions:
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-detail-Crawler"]'
