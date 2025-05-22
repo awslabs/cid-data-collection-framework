@@ -532,34 +532,20 @@ Resources:
           
           def lambda_handler(event, context):
               print(json.dumps(event))
-              account_id = context.invoked_function_arn.split(':')[4]
               try:
-                  endpoint = os.environ['CID_ANALYTICS_ENDPOINT']
-                  action = event['RequestType'].upper()
-                  if action not in ['CREATE', 'UPDATE', 'DELETE']:
-                      raise Exception(f"Unknown RequestType {action}")
-                  name = event['ResourceProperties']['Name']
-                  payload = {
-                      'id': f'data-collection-lab/{name}',
-                      'account_id': account_id,
-                      {'CREATE': 'created_via', 'UPDATE': 'updated_via', 'DELETE': 'deleted_via'}.get(action): 'CFN'
-                  }
-                  response = urllib3.PoolManager().request(
-                      {'CREATE': 'PUT', 'UPDATE': 'PATCH', 'DELETE': 'DELETE'}.get(action),
-                      endpoint,
-                      body=json.dumps(payload).encode('utf-8'),
+                  urllib3.PoolManager().request(
+                      {'CREATE': 'PUT', 'UPDATE': 'PATCH', 'DELETE': 'DELETE'}.get(event['RequestType'].upper()),
+                      os.environ['CID_ANALYTICS_ENDPOINT'],
+                      body=json.dumps({
+                          'id': 'data-collection-lab/' + event['ResourceProperties'].get('Name'),
+                          'account_id': context.invoked_function_arn.split(':')[4],
+                          'via': 'CFN'
+                      }).encode('utf-8'),
                       headers={'Content-Type': 'application/json'}
                   )
-                  if response.status != 200:
-                      raise Exception(
-                          f"Server responded with status {response.status}: "
-                          f"{response.data.decode('utf-8')}. This issue will be ignored"
-                      )
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Reason': 'success'})
               except Exception as exc:
-                  reason = f"{exc}. This issue will be ignored"
-                  print(f"Exception occurred: {reason}")
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Reason': reason})
+                  print(f"Exception occurred: {exc}")
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Reason': 'success'})
 
   LambdaInitRole: #Execution role for the custom resource for Init Lambda
     Type: AWS::IAM::Role
