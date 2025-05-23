@@ -161,7 +161,6 @@ Resources:
                   raise RuntimeError(f"(MissingParameterError) Lambda event missing '{key}' parameter")
 
               account = json.loads(event[key])
-              
               try:
                   main(account, ROLE_NAME, MODULE_NAME, BUCKET)
               except Exception as exc: #pylint: disable=broad-exception-caught
