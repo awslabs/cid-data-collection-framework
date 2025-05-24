@@ -51,6 +51,9 @@ Parameters:
     Type: String
     Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
     Default: ""
+  DetailStepFunctionTemplate:
+    Type: String
+    Description: JSON representation of the detail retrieval StepFunction template
 
 Conditions:
   NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
@@ -479,6 +482,7 @@ Resources:
         DeployRegion: !Ref AWS::Region
         Account: !Ref AWS::AccountId
         Prefix: !Ref ResourcePrefix
+        Bucket: !Ref DestinationBucket
 
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'
@@ -497,84 +501,12 @@ Resources:
   StepFunctionDetail:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-detail-StateMachine'
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
-      DefinitionString: |
-        {
-          "Comment": "Collects Health Events",
-          "StartAt": "DetailProcessor Map",
-          "States": {
-            "DetailProcessor Map": {
-              "Type": "Map",
-              "ItemProcessor": {
-                "ProcessorConfig": {
-                  "Mode": "DISTRIBUTED",
-                  "ExecutionType": "STANDARD"
-                },
-                "StartAt": "DetailLambda Invoke",
-                "States": {
-                  "DetailLambda Invoke": {
-                    "Type": "Task",
-                    "Resource": "arn:${Partition}:states:::lambda:invoke",
-                    "OutputPath": "$.Payload",
-                    "Parameters": {
-                      "Payload.$": "$",
-                      "FunctionName": "${ModuleLambdaARN}"
-                    },
-                    "Retry": [
-                      {
-                        "ErrorEquals": [
-                          "Lambda.ServiceException",
-                          "Lambda.AWSLambdaException",
-                          "Lambda.SdkClientException",
-                          "Lambda.TooManyRequestsException"
-                        ],
-                        "IntervalSeconds": 1,
-                        "MaxAttempts": 3,
-                        "BackoffRate": 2
-                      }
-                    ],
-                    "End": true
-                  }
-                }
-              },
-              "Label": "DetailProcessorMap",
-              "MaxConcurrency": ${MaxConcurrentBatches},
-              "ItemReader": {
-                "Resource": "arn:${Partition}:states:::s3:getObject",
-                "ReaderConfig": {
-                  "InputType": "CSV",
-                  "CSVHeaderLocation": "FIRST_ROW"
-                },
-                "Parameters": {
-                  "Bucket.$": "$.bucket",
-                  "Key.$": "$.file"
-                }
-              },
-              "ItemBatcher": {
-                "MaxItemsPerBatch": ${ItemsPerBatch},
-                "BatchInput": {
-                  "account.$": "$.account",
-                  "ingestion_time.$": "$.ingestion_time"
-                }
-              },
-              "Next": "CrawlerStepFunctionStartExecution"
-            },
-            "CrawlerStepFunctionStartExecution": {
-              "Type": "Task",
-              "Resource": "arn:${Partition}:states:::states:startExecution.sync:2",
-              "Parameters": {
-                "StateMachineArn": "arn:${Partition}:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
-                "Input": {
-                  "crawlers": ${Crawlers}
-                }
-              },
-              "End": true
-            }
-          },
-          "TimeoutSeconds": 14400
-        }
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref DetailStepFunctionTemplate
       DefinitionSubstitutions:
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-detail-Crawler"]'
@@ -587,6 +519,7 @@ Resources:
         ItemsPerBatch: 50
         MaxConcurrentBatches: 1
         Partition: !Ref AWS::Partition
+        Bucket: !Ref DestinationBucket
     Metadata:
       cfn-lint:
         config:
