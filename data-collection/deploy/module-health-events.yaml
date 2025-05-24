@@ -501,7 +501,7 @@ Resources:
   StepFunctionDetail:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-detail-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
       DefinitionS3Location:

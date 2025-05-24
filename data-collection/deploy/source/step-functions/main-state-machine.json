@@ -26,8 +26,7 @@
       "QueryLanguage": "JSONata",
       "Assign": {
         "LOG_KEY_BASE": "{% 'logs/modules/'&$EXE_START_TIME_SPLIT[0]&'/'&$EXE_START_TIME_SPLIT[1]&'/'&$EXE_START_TIME_SPLIT[2]&'/'&$MODULE&'-sf-' %}",
-        "CRAWLER_STATE_MACHINE": "{% 'arn:aws:states:'&$DATA_COLLECTION_REGION&':'&$DATA_COLLECTION_ACCOUNT&':stateMachine:'&$PREFIX&'CrawlerExecution-StateMachine' %}",
-        "ACCT_COLLECTOR_LAMBDA": "{% 'arn:aws:lambda:'&$DATA_COLLECTION_REGION&':'&$DATA_COLLECTION_ACCOUNT&':function:'&$PREFIX&'account-collector-Lambda' %}"
+        "CRAWLER_STATE_MACHINE": "{% 'arn:aws:states:'&$DATA_COLLECTION_REGION&':'&$DATA_COLLECTION_ACCOUNT&':stateMachine:'&$PREFIX&'CrawlerExecution-StateMachine' %}"
       },
       "Next": "EntryLog"
     },
@@ -83,7 +82,8 @@
       "Resource": "arn:aws:states:::lambda:invoke",
       "Next": "DataCollectionMap",
       "Arguments": {
-        "FunctionName": "{% $ACCT_COLLECTOR_LAMBDA %}",
+
+        "FunctionName": "${ModuleLambdaARN}",
         "Payload": {
           "module": "{% $MODULE %}",
           "type": "{% $MOD_TYPE %}",
