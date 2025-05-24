@@ -534,8 +534,8 @@ Resources:
               print(json.dumps(event))
               try:
                   urllib3.PoolManager().request(
-                      {'CREATE': 'PUT', 'UPDATE': 'PATCH', 'DELETE': 'DELETE'}.get(event['RequestType'].upper()),
-                      os.environ['CID_ANALYTICS_ENDPOINT'],
+                      method={'CREATE': 'PUT', 'UPDATE': 'PATCH', 'DELETE': 'DELETE'}[event['RequestType'].upper()],
+                      url=os.environ['CID_ANALYTICS_ENDPOINT'],
                       body=json.dumps({
                           'id': 'data-collection-lab/' + event['ResourceProperties'].get('Name'),
                           'account_id': context.invoked_function_arn.split(':')[4],
